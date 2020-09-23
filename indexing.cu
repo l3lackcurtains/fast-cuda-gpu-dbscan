@@ -216,31 +216,6 @@ int main(int argc, char **argv) {
    */
     cudaFree(d_indexRoot);
     
-   /*
-    indexConstruction(importedDataset, indexRoot, partition, minPoints);
-
-    int searchPointId = 100;
-    double *data;
-    data = (double *)malloc(sizeof(double) * DIMENSION);
-    for (int j = 0; j < DIMENSION; j++) {
-        data[j] = importedDataset[searchPointId * DIMENSION + j];
-    }
-
-    int * results = (int *) malloc(sizeof(int) * POINTS_SEARCHED);
-    for(int i = 0; i < POINTS_SEARCHED; i++) {
-      results[i] = -1;
-    }
-    searchPoints(results, data, indexRoot, partition);
-
-    printf("Searched Points:\n");
-    for (int i = 0; i < POINTS_SEARCHED; i++) {
-        if(results[i] == -1) break;
-        printf("%d ", results[i]);
-    }
-    printf("\n");
-
-    */
-
     return 0;
 }
 
@@ -267,13 +242,12 @@ __device__ void indexConstruction(struct IndexStructure *indexRoot, struct Index
     for(int i = 0; i < DIMENSION; i++) {
       indexedStructureSize *= d_partition[i];
     }
-
+    printf("%d\n", indexedStructureSize);
     struct IndexStructure ** indexedStructures = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
 
     int indexedStructureSizeCount = 0;
     
     indexedStructures[indexedStructureSizeCount++] = indexRoot;
-
 
     for (int j = 0; j < DIMENSION; j++) {
 
@@ -289,38 +263,29 @@ __device__ void indexConstruction(struct IndexStructure *indexRoot, struct Index
 
             double rightPoint = d_minPoints[j] + d_partition[j] * EPSILON;
             for (int k = d_partition[j] - 1; k >= 0; k--) {
-                currentIndex->buckets[k] = indexBuckets[*indexBucketsLength];
                 
-                currentIndex->buckets[k]->range[1] = rightPoint;
-                
+                indexBuckets[*indexBucketsLength]->range[1] = rightPoint;
                 rightPoint = rightPoint - EPSILON;
-                currentIndex->buckets[k]->range[0] = rightPoint;
-                currentIndex->buckets[k]->dataRoot = dataNodes[*dataNodesLength];
-
-                currentIndex->buckets[k]->dataRoot->id = -1;
-
-                (*dataNodesLength)++;
+                indexBuckets[*indexBucketsLength]->range[0] = rightPoint;
+                currentIndex->buckets[k] = indexBuckets[*indexBucketsLength];
                 (*indexBucketsLength)++;
 
+                printf("%d\n", *indexBucketsLength);
                 if (j < DIMENSION - 1) {
                     childIndexedStructures[childIndexedStructureSizeCount++] = indexBuckets[*indexBucketsLength];
-                }
+               }
             }
             free(currentIndex);
         }
 
         while (childIndexedStructureSizeCount > 0) {
+            
             indexedStructures[indexedStructureSizeCount++] = childIndexedStructures[--childIndexedStructureSizeCount];
-        }
 
-        for(int i = 0; i < indexedStructureSize; i++) {
-            free(childIndexedStructures[i]);
+            free(childIndexedStructures[childIndexedStructureSizeCount]);
         }
         free(childIndexedStructures);
-    }
-
-    printf("xxx");
-    
+    } 
 
     for(int i = 0; i < indexedStructureSize; i++) {
         free(indexedStructures[i]);
@@ -341,10 +306,10 @@ void insertData(int id, struct IndexStructure *indexRoot) {
     struct dataNode *selectedDataNode = (struct dataNode *)malloc(sizeof(struct dataNode));
 
     currentIndex = indexRoot;
-    register bool found = false;
+    bool found = false;
 
     while (!found) {
-        register int dimension = currentIndex->level;
+        int dimension = currentIndex->level;
         for (int k = 0; k < d_partition[dimension]; k++) {
             
             if (data[dimension] >= currentIndex->buckets[k]->range[0] && data[dimension] <= currentIndex->buckets[k]->range[1]) {
