@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
 
     indexConstruction(importedDataset, indexRoot);
 
-    int searchPointId = 12;
+    int searchPointId = 0;
     double data[DIMENSION];
     for (int j = 0; j < DIMENSION; j++) {
         data[j] = importedDataset[searchPointId * DIMENSION + j];
@@ -235,7 +235,7 @@ int ImportDataset(char const *fname, double *dataset) {
     while (fgets(buf, 4096, fp) && cnt < DATASET_COUNT * DIMENSION) {
         char *field = strtok(buf, ",");
         double tmp;
-        sscanf(field, "%Lf", &tmp);
+        sscanf(field, "%lf", &tmp);
         dataset[cnt] = tmp;
         cnt++;
 
@@ -244,7 +244,7 @@ int ImportDataset(char const *fname, double *dataset) {
 
             if (field != NULL) {
                 double tmp;
-                sscanf(field, "%Lf", &tmp);
+                sscanf(field, "%lf", &tmp);
                 dataset[cnt] = tmp;
                 cnt++;
             }
