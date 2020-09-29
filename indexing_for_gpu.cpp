@@ -170,6 +170,7 @@ void indexConstruction(double *dataset, struct IndexStructure *indexRoot, int *p
 }
 
 void insertData(int id, double *data, struct IndexStructure *indexRoot, int *partition) {
+    
     struct IndexStructure *currentIndex = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
     struct dataNode *selectedDataNode = (struct dataNode *)malloc(sizeof(struct dataNode));
