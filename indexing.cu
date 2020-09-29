@@ -63,6 +63,8 @@ int ImportDataset(char const *fname, double *dataset);
 
 __device__ void indexConstruction(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, int * indexBucketsLength, struct dataNode **dataNodes, int * dataNodesLength);
 
+__device__ void indexConstruction2D(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets);
+
 __device__
 void insertData(int id, struct IndexStructure *indexRoot, struct dataNode **dataNodes, int * dataNodesLength);
 
@@ -168,10 +170,11 @@ int main(int argc, char **argv) {
 
     gpuErrchk(cudaMemset(sym_results, -1, sizeof(int) * POINTS_SEARCHED));
 
-    int indexedStructureSize = 1;
+    int indexedStructureSize = 2;
     for(int i = 0; i < DIMENSION; i++) {
         indexedStructureSize *= partition[i];
     }
+
 
     int * d_indexBucketsLength, * d_dataNodesLength;
     gpuErrchk(cudaMalloc((void **)&d_indexBucketsLength,sizeof(int)));
@@ -184,23 +187,25 @@ int main(int argc, char **argv) {
     // Allocate memory for index buckets
     struct IndexStructure **d_indexBuckets, *d_currentIndexBucket;
 
-    gpuErrchk(cudaMalloc((void **)&d_indexBuckets,sizeof(struct IndexStructure*) * indexedStructureSize*2));
+    gpuErrchk(cudaMalloc((void **)&d_indexBuckets,sizeof(struct IndexStructure*) * indexedStructureSize));
 
-    for(int i = 0; i < indexedStructureSize*2; i++) {
+    for(int i = 0; i < indexedStructureSize; i++) {
         gpuErrchk(cudaMalloc((void **)&d_currentIndexBucket, sizeof(struct IndexStructure)));
         gpuErrchk(cudaMemcpy(&d_indexBuckets[i], &d_currentIndexBucket, sizeof(struct IndexStructure*), cudaMemcpyHostToDevice));
         
     }
+    cudaFree(d_currentIndexBucket);
 
     // Allocate memory for data Nodes
     struct dataNode **d_dataNodes, *d_currentdataNode;
 
-    gpuErrchk(cudaMalloc((void **)&d_dataNodes,sizeof(struct dataNode*) * DATASET_COUNT*5));
+    gpuErrchk(cudaMalloc((void **)&d_dataNodes,sizeof(struct dataNode*) * DATASET_COUNT));
 
-    for(int i = 0; i < DATASET_COUNT*5; i++) {
+    for(int i = 0; i < DATASET_COUNT; i++) {
         gpuErrchk(cudaMalloc((void **)&d_currentdataNode,sizeof(struct dataNode*)));
         gpuErrchk(cudaMemcpy(&d_dataNodes[i], &d_currentdataNode, sizeof(struct dataNode*), cudaMemcpyHostToDevice));
     }
+    cudaFree(d_currentdataNode);
 
      /**
    **************************************************************************
@@ -227,26 +232,42 @@ int main(int argc, char **argv) {
 
 __global__ void Indexingkernel(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct dataNode **dataNodes, int * indexBucketsLength, int * dataNodesLength) {
 
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        indexConstruction(indexRoot, indexBuckets, indexBucketsLength, dataNodes, dataNodesLength);
+    for(int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
+        dataNodes[i]->id = i;
+        
     }
+    __syncthreads();
+
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        indexConstruction2D(indexRoot, indexBuckets);
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+    for(int i = 0; i < DATASET_COUNT; i++) {
+        insertData(i, indexRoot, dataNodes, dataNodesLength);
+    }
+}
     __syncthreads();
 
     
-    for(int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
-        insertData(i, indexRoot, dataNodes, dataNodesLength);
-    }
-
-    /*
     if (threadIdx.x == 0 && blockIdx.x == 0) {
+        
         double data[DIMENSION];
         data[0] = d_dataset[0];
-        data[0] = d_dataset[1];
+        data[1] = d_dataset[1];
         searchPoints(data, indexRoot);
+
+        __syncthreads();
+
+        for(int i = 0; i < POINTS_SEARCHED; i++) {
+            printf("%d ", d_results[i]);
+        }
+        printf("\n");
     }
 
     __syncthreads();
-    */
+    
     
 
 }
@@ -254,7 +275,7 @@ __global__ void Indexingkernel(struct IndexStructure *indexRoot, struct IndexStr
 
 __device__ void indexConstruction(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, int * indexBucketsLength, struct dataNode **dataNodes, int * dataNodesLength) {
 
-    int indexedStructureSize = 1;
+    int indexedStructureSize = 2;
     for(int i = 0; i < DIMENSION; i++) {
       indexedStructureSize *= d_partition[i];
     }
@@ -313,6 +334,43 @@ __device__ void indexConstruction(struct IndexStructure *indexRoot, struct Index
     free(indexedStructures);
 }
 
+__device__ void indexConstruction2D(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets) {
+
+    int currentLevel = 0;
+    indexRoot->level = currentLevel;
+
+    int currentBucketCount = 0;
+
+    for (int k = 0; k < d_partition[currentLevel]; k++) {
+        
+        indexRoot->buckets[k] = indexBuckets[currentBucketCount];
+
+        double leftPoint = d_minPoints[currentLevel] + k* EPSILON;
+        double rightPoint = leftPoint + EPSILON;
+
+        indexRoot->buckets[k]->range[0] = leftPoint;      
+        indexRoot->buckets[k]->range[1] = rightPoint;
+
+        currentLevel = 1;
+
+        indexRoot->buckets[k]->level = currentLevel;
+        
+        for (int m = 0; m < d_partition[currentLevel]; m++) {
+            currentBucketCount++;
+
+            indexRoot->buckets[k]->buckets[m] = indexBuckets[currentBucketCount];
+           
+            double leftPoint = d_minPoints[currentLevel] + m* EPSILON;
+            double rightPoint = leftPoint + EPSILON;
+
+            indexRoot->buckets[k]->buckets[m]->range[0] = leftPoint;
+            indexRoot->buckets[k]->buckets[m]->range[1] = rightPoint;
+        }
+        currentBucketCount++;
+        currentLevel = 0;
+    }
+}
+
 __device__
 void insertData(int id, struct IndexStructure *indexRoot, struct dataNode **dataNodes, int * dataNodesLength) {
 
@@ -331,54 +389,45 @@ void insertData(int id, struct IndexStructure *indexRoot, struct dataNode **data
     while (!found) {
         int dimension = currentIndex->level;
         for (int k = 0; k < d_partition[dimension]; k++) {
-            struct IndexStructure *currentBucket = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
-            currentBucket = currentIndex->buckets[k];
 
-            float comparingData = (float)data[dimension];
-            float leftRange = (float)currentBucket->range[0];
-            float rightRange = (float)currentBucket->range[1];
+            register float comparingData = data[dimension];
+            register float leftRange = currentIndex->buckets[k]->range[0];
+            register float rightRange = currentIndex->buckets[k]->range[1];
 
             if (comparingData >= leftRange && comparingData <= rightRange) {
                 if (dimension == DIMENSION - 1) {
-                    selectedDataNode = currentBucket->dataRoot;
+                    if(!currentIndex->buckets[k]->dataRoot) {
+                        currentIndex->buckets[k]->dataRoot = dataNodes[id];
+                    }
+                    selectedDataNode = currentIndex->buckets[k]->dataRoot;
                     found = true;
                     break;
                 }
-                currentIndex = currentBucket;
+                currentIndex = currentIndex->buckets[k];
                 break;
             }
         }
     }
-
-    if (selectedDataNode->id == -1) {
-        selectedDataNode->id = id;
-        register int currentDataNodeCount = atomicAdd(dataNodesLength, 1);
-        
-        selectedDataNode->child =  dataNodes[currentDataNodeCount];
-        selectedDataNode->child->id = -1;
-    } else {
-        selectedDataNode = selectedDataNode->child;
-        while (selectedDataNode->id != -1) {
+    
+    if (selectedDataNode->id != id) {
+        while (selectedDataNode->child) {
             selectedDataNode = selectedDataNode->child;
         }
-        selectedDataNode->id = id;
-        register int currentDataNodeCount = atomicAdd(dataNodesLength, 1);
+        selectedDataNode->child = dataNodes[id];
         
-        selectedDataNode->child =  dataNodes[currentDataNodeCount];
-        selectedDataNode->child->id = -1;
-        printf("%d\n", currentDataNodeCount);
-    }
+     }
 }
 
 
 __device__
 void searchPoints(double *data, struct IndexStructure *indexRoot) {
+
     struct IndexStructure *currentIndex = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
     struct dataNode *selectedDataNode = (struct dataNode *)malloc(sizeof(struct dataNode));
 
     // Size of data Node and index
-    int indexedStructureSize = 1;
+    int indexedStructureSize = 2;
     for(int i = 0; i < DIMENSION; i++) {
       indexedStructureSize *= 3;
     }
@@ -402,17 +451,15 @@ void searchPoints(double *data, struct IndexStructure *indexRoot) {
 
         for (int k = 0; k < d_partition[dimension]; k++) {
 
-            struct IndexStructure *currentBucket = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
-
-            currentBucket = currentIndex->buckets[k];
-
             float comparingData = (float)data[dimension];
-            float leftRange = (float)currentBucket->range[0];
-            float rightRange = (float)currentBucket->range[1];
+            float leftRange = (float)currentIndex->buckets[k]->range[0];
+            float rightRange = (float)currentIndex->buckets[k]->range[1];
 
             if (comparingData >= leftRange && comparingData <= rightRange) {
                 if (dimension == DIMENSION - 1) {
-                    selectedDataNodes[selectedDataNodeSize++] = currentBucket->dataRoot;
+
+                    selectedDataNodes[selectedDataNodeSize++] = currentIndex->buckets[k]->dataRoot;
+
                     if (k > 0) {
                         selectedDataNodes[selectedDataNodeSize++] = currentIndex->buckets[k - 1]->dataRoot;
                     }
@@ -421,7 +468,7 @@ void searchPoints(double *data, struct IndexStructure *indexRoot) {
                     }
                     break;
                 }
-                currentIndexes[currentIndexSize++] = currentBucket;
+                currentIndexes[currentIndexSize++] = currentIndex->buckets[k];
                 if (k > 0) {
                     currentIndexes[currentIndexSize++] = currentIndex->buckets[k - 1];
                 }
@@ -434,9 +481,10 @@ void searchPoints(double *data, struct IndexStructure *indexRoot) {
     }
 
     int resultsCount = 0;
+    
     for (int x = 0; x < selectedDataNodeSize; x++) {
         selectedDataNode = selectedDataNodes[x];
-        while (selectedDataNode->id != -1) {
+        while (selectedDataNode) {
             d_results[resultsCount++] = selectedDataNode->id;
             selectedDataNode = selectedDataNode->child;
         }
