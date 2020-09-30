@@ -9,6 +9,7 @@
 
 #define DATASET_COUNT 1000
 #define DIMENSION 2
+#define TREE_LEVELS DIMENSION + 1
 #define PARTITION 100
 #define POINTS_SEARCHED 100
 #define THREAD_BLOCKS 64
@@ -56,7 +57,7 @@ __global__ void Indexingkernel(struct IndexStructure *indexRoot, struct IndexStr
 
 int ImportDataset(char const *fname, double *dataset);
 
-__device__ void indexConstruction(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets);
+__device__ void indexConstruction(int dimension, struct IndexStructure **indexBuckets);
 
 __device__ void indexConstruction2D(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets);
 
@@ -165,11 +166,15 @@ int main(int argc, char **argv) {
 
     gpuErrchk(cudaMemset(sym_results, -1, sizeof(int) * POINTS_SEARCHED));
 
-    int indexedStructureSize = 2;
+    int indexedStructureSize = 1;
     for(int i = 0; i < DIMENSION; i++) {
         indexedStructureSize *= partition[i];
     }
 
+    for(int i = 0; i < DIMENSION - 1; i++) {
+        indexedStructureSize += partition[i];
+    }
+    indexedStructureSize = indexedStructureSize + 1;
 
     int * d_indexBucketsLength, * d_dataNodesLength;
     gpuErrchk(cudaMalloc((void **)&d_indexBucketsLength,sizeof(int)));
@@ -216,9 +221,16 @@ int main(int argc, char **argv) {
 
 __global__ void Indexingkernel(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, int * indexBucketsLength) {
 
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        indexConstruction2D(indexRoot, indexBuckets);
+    __shared__ int blockID;
+
+    if (threadIdx.x == 0) {
+        blockID = blockIdx.x;
+        indexBuckets[0] = indexRoot;
     }
+    __syncthreads();
+
+    indexConstruction(blockID, indexBuckets);
+    
     __syncthreads();
     
     for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
@@ -240,98 +252,59 @@ __global__ void Indexingkernel(struct IndexStructure *indexRoot, struct IndexStr
     __syncthreads();
 }
 
-__device__ void indexConstruction(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets) {
+__device__ void indexConstruction(int dimension, struct IndexStructure **indexBuckets) {
 
-    int indexedStructureSize = 2;
+    if(dimension > DIMENSION) return;
+
+    int partition[TREE_LEVELS] = {1};
+
     for(int i = 0; i < DIMENSION; i++) {
-      indexedStructureSize *= d_partition[i];
+        partition[i+1] = d_partition[i];
     }
 
-    struct IndexStructure ** indexedStructures = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
+    int childItems[TREE_LEVELS];
+    int startEndIndexes[TREE_LEVELS][2];
 
-    int indexedStructureSizeCount = 0;
-    indexedStructures[indexedStructureSizeCount++] = indexRoot;
+    int mulx = 1;
+    for(int k = 0; k < TREE_LEVELS; k++) {
+        mulx *= partition[k];
+        childItems[k] = mulx;
+    }
 
-    for (int j = 0; j < DIMENSION; j++) {
+    for(int i = 0; i < TREE_LEVELS; i++) {
+        if(i == 0) {
+            startEndIndexes[i][0] = 0;
+            startEndIndexes[i][1] = 1;
+            continue;
+        }
+        startEndIndexes[i][0] = startEndIndexes[i-1][1];
+        startEndIndexes[i][1] =  startEndIndexes[i][0];
+        for(int k = 0; k < childItems[i-1]; k++) {
+            startEndIndexes[i][1] += partition[i];
+        }
 
-        struct IndexStructure ** childIndexedStructures = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
+    }
 
-        int childIndexedStructureSizeCount = 0;
+    for(int k = threadIdx.x + startEndIndexes[dimension][0]; k < startEndIndexes[dimension][1]; k = k + THREAD_COUNT) {
+        if(dimension < DIMENSION) {
+            for(int i = 0; i < d_partition[dimension]; i++) {
+                
+                int currentBucketIndex = startEndIndexes[dimension][1] + i + (k - startEndIndexes[dimension][0])*d_partition[dimension];
 
-        int currentBucketCount = 0;
+                indexBuckets[k]->buckets[i] = indexBuckets[currentBucketIndex];
+                indexBuckets[k]->level = dimension;
+            
+                double leftPoint = d_minPoints[dimension] + i* EPSILON;
+                double rightPoint = leftPoint + EPSILON;
 
-        while (indexedStructureSizeCount > 0) {
-
-            struct IndexStructure *currentIndex = indexedStructures[--indexedStructureSizeCount];
-            currentIndex->level = j;
-
-            double rightPoint = d_minPoints[j] + d_partition[j] * EPSILON;
-
-            for (int k = d_partition[j] - 1; k >= 0; k--) {
-
-                struct IndexStructure *currentBucket = indexBuckets[currentBucketCount++];
-
-                currentBucket->range[1] = rightPoint;
-                rightPoint = rightPoint - EPSILON;
-                currentBucket->range[0] = rightPoint;
-
-                if(j == DIMENSION -1) {
-                    for(int i = 0; i < POINTS_SEARCHED; i++) {
-                        currentBucket->datas[i] = -1;
-                    }
-                }
-
-                currentIndex->buckets[k] = currentBucket;
-                if (j < DIMENSION - 1) {
-                    childIndexedStructures[childIndexedStructureSizeCount++] = currentIndex->buckets[k];
-                }
+                indexBuckets[k]->buckets[i]->range[0] = leftPoint;
+                indexBuckets[k]->buckets[i]->range[1] = rightPoint;
             }
-        }
-
-        while (childIndexedStructureSizeCount > 0) {
-          indexedStructures[indexedStructureSizeCount++] = childIndexedStructures[--childIndexedStructureSizeCount];
-        }
-    }
-}
-
-__device__ void indexConstruction2D(struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets) {
-
-    int currentLevel = 0;
-    indexRoot->level = currentLevel;
-
-    int currentBucketCount = 0;
-
-    for (int k = 0; k < d_partition[currentLevel]; k++) {
-        
-        indexRoot->buckets[k] = indexBuckets[currentBucketCount];
-
-        double leftPoint = d_minPoints[currentLevel] + k* EPSILON;
-        double rightPoint = leftPoint + EPSILON;
-
-        indexRoot->buckets[k]->range[0] = leftPoint;      
-        indexRoot->buckets[k]->range[1] = rightPoint;
-
-        currentLevel = 1;
-
-        indexRoot->buckets[k]->level = currentLevel;
-        
-        for (int m = 0; m < d_partition[currentLevel]; m++) {
-            currentBucketCount++;
-
-            indexRoot->buckets[k]->buckets[m] = indexBuckets[currentBucketCount];
-           
-            double leftPoint = d_minPoints[currentLevel] + m* EPSILON;
-            double rightPoint = leftPoint + EPSILON;
-
-            indexRoot->buckets[k]->buckets[m]->range[0] = leftPoint;
-            indexRoot->buckets[k]->buckets[m]->range[1] = rightPoint;
-
+        } else {
             for(int i = 0; i < POINTS_SEARCHED; i++) {
-                indexRoot->buckets[k]->buckets[m]->datas[i] = -1;
+                indexBuckets[k]->datas[i] = -1;
             }
         }
-        currentBucketCount++;
-        currentLevel = 0;
     }
 }
 
