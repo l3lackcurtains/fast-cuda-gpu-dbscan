@@ -270,10 +270,10 @@ __global__ void INDEXING_STRUCTURE(struct IndexStructure *indexRoot,
     __syncthreads();
   }
 
-  if (blockIdx.x == 0) {
-    for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
-      insertData(i, indexRoot);
-    }
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  
+  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
+    insertData(i, indexRoot);
   }
   __syncthreads();
 
