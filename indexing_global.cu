@@ -58,16 +58,16 @@ double *sym_minPoints;
 void indexStructureInit(double *dataset);
 
 __global__ void INDEXING_STRUCTURE(struct IndexStructure *indexRoot,
-                               struct IndexStructure **indexBuckets);
+                               struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, struct IndexStructure **indexesStack);
 
 int ImportDataset(char const *fname, double *dataset);
 
 __device__ void indexConstruction(int dimension,
                                   struct IndexStructure **indexBuckets);
 
-__device__ void insertData(int id, struct IndexStructure *indexRoot);
+__device__ void insertData(int id, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex);
 
-__device__ void searchPoints(int id, struct IndexStructure *indexRoot);
+__device__ void searchPoints(int id, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack);
 
 /**
 //////////////////////////////////////////////////////////////////////////
@@ -150,6 +150,46 @@ int main(int argc, char **argv) {
   }
   cudaFree(d_currentIndexBucket);
 
+  int TOTAL_THREADS = THREAD_BLOCKS * THREAD_COUNT;
+  
+  // Allocate memory for current indexed
+  struct IndexStructure **d_currentIndexes, *d_currentIndex;
+
+  gpuErrchk(cudaMalloc((void **)&d_currentIndexes,
+                       sizeof(struct IndexStructure *) * TOTAL_THREADS));
+
+  for (int i = 0; i < TOTAL_THREADS; i++) {
+    gpuErrchk(cudaMalloc((void **)&d_currentIndex,
+                         sizeof(struct IndexStructure)));
+    gpuErrchk(cudaMemcpy(&d_currentIndexes[i], &d_currentIndex,
+                         sizeof(struct IndexStructure *),
+                         cudaMemcpyHostToDevice));
+  }
+  cudaFree(d_currentIndex);
+
+
+  // Allocate memory for current indexes stack
+  int indexBucketSize = RANGE;
+  for (int i = 0; i < DIMENSION; i++) {
+    indexBucketSize *= 3;
+  }
+
+  indexBucketSize = indexBucketSize * TOTAL_THREADS;
+  
+  struct IndexStructure **d_indexesStack, *d_currentIndexStack;
+
+  gpuErrchk(cudaMalloc((void **)&d_indexesStack,
+                       sizeof(struct IndexStructure *) * indexBucketSize));
+
+  for (int i = 0; i < indexBucketSize; i++) {
+    gpuErrchk(cudaMalloc((void **)&d_currentIndexStack,
+                         sizeof(struct IndexStructure)));
+    gpuErrchk(cudaMemcpy(&d_indexesStack[i], &d_currentIndexStack,
+                         sizeof(struct IndexStructure *),
+                         cudaMemcpyHostToDevice));
+  }
+  cudaFree(d_currentIndexStack);
+
   /**
 **************************************************************************
 * kernel Function...
@@ -157,7 +197,7 @@ int main(int argc, char **argv) {
 */
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_indexRoot, d_indexBuckets);
+      d_indexRoot, d_indexBuckets, d_currentIndexes, d_indexesStack);
 
   gpuErrchk(cudaDeviceSynchronize());
 
@@ -168,6 +208,7 @@ int main(int argc, char **argv) {
   */
 
   cudaFree(d_indexRoot);
+  cudaFree(d_indexesStack);
 
   return 0;
 }
@@ -257,7 +298,7 @@ void indexStructureInit(double *dataset) {
 }
 
 __global__ void INDEXING_STRUCTURE(struct IndexStructure *indexRoot,
-                               struct IndexStructure **indexBuckets) {
+                               struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, struct IndexStructure **indexesStack) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     indexBuckets[0] = indexRoot;
@@ -272,13 +313,13 @@ __global__ void INDEXING_STRUCTURE(struct IndexStructure *indexRoot,
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   
-  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
-    insertData(i, indexRoot);
+  for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
+    insertData(i, indexRoot, currentIndexes[threadId]);
   }
   __syncthreads();
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    searchPoints(0, indexRoot);
+    searchPoints(999, indexRoot, currentIndexes[threadId], indexesStack);
     __syncthreads();
     printf("Searching for point 0: ");
     for (int i = 0; i < POINTS_SEARCHED; i++) {
@@ -319,14 +360,11 @@ __device__ void indexConstruction(int dimension,
   }
 }
 
-__device__ void insertData(int id, struct IndexStructure *indexRoot) {
+__device__ void insertData(int id, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex) {
   register float data[DIMENSION];
   for (int j = 0; j < DIMENSION; j++) {
     data[j] = d_dataset[id * DIMENSION + j];
   }
-
-  struct IndexStructure *currentIndex =
-      (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
   currentIndex = indexRoot;
   bool found = false;
@@ -357,32 +395,27 @@ __device__ void insertData(int id, struct IndexStructure *indexRoot) {
   }
 }
 
-__device__ void searchPoints(int id, struct IndexStructure *indexRoot) {
+__device__ void searchPoints(int id, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack) {
   double data[DIMENSION];
   for (int i = 0; i < DIMENSION; i++) {
     data[i] = d_dataset[id * DIMENSION + i];
   }
 
-  struct IndexStructure *currentIndex =
-      (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
 
   int indexBucketSize = RANGE;
   for (int i = 0; i < DIMENSION; i++) {
     indexBucketSize *= 3;
   }
 
-  // Current Index
-  struct IndexStructure **currentIndexes = (struct IndexStructure **)malloc(
-      sizeof(struct IndexStructure *) * indexBucketSize);
-
-  int currentIndexSize = 0;
-  currentIndexes[currentIndexSize++] = indexRoot;
+  int currentIndexSize = threadId*indexBucketSize;
+  indexesStack[currentIndexSize++] = indexRoot;
 
   int resultsCount = 0;
 
-  while (currentIndexSize > 0) {
+  while (currentIndexSize > threadId*indexBucketSize) {
     
-    currentIndex = currentIndexes[--currentIndexSize];
+    currentIndex = indexesStack[--currentIndexSize];
 
     int dimension = currentIndex->level;
 
@@ -423,12 +456,12 @@ __device__ void searchPoints(int id, struct IndexStructure *indexRoot) {
           }
           break;
         }
-        currentIndexes[currentIndexSize++] = currentIndex->buckets[k];
+        indexesStack[currentIndexSize++] = currentIndex->buckets[k];
         if (k > 0) {
-          currentIndexes[currentIndexSize++] = currentIndex->buckets[k - 1];
+          indexesStack[currentIndexSize++] = currentIndex->buckets[k - 1];
         }
         if (k < d_partition[dimension] - 1) {
-          currentIndexes[currentIndexSize++] = currentIndex->buckets[k + 1];
+          indexesStack[currentIndexSize++] = currentIndex->buckets[k + 1];
         }
         break;
       }
