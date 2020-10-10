@@ -372,6 +372,7 @@ __device__ void insertData(int id, struct IndexStructure *indexRoot, struct Inde
   while (!found) {
     int dimension = currentIndex->level;
     for (int k = 0; k < d_partition[dimension]; k++) {
+
       register float comparingData = data[dimension];
       register float leftRange = currentIndex->buckets[k]->range[0];
       register float rightRange = currentIndex->buckets[k]->range[1];

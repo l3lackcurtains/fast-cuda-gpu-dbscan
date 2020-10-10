@@ -257,11 +257,10 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
   }
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-    for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
-      insertData(i, dataset, partition, indexRoot);
-    }
-  
-  
+  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
+    insertData(i, dataset, partition, indexRoot);
+  }
+
   
   __syncthreads();
 
@@ -344,6 +343,7 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
           for (int i = 0; i < POINTS_SEARCHED; i++) {
             register int changedState =
                 atomicCAS(&currentIndex->buckets[k]->datas[i], -1, id);
+
             if (changedState == -1 || changedState == id) {
               break;
             }
@@ -371,7 +371,6 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
 
   struct IndexStructure *currentIndex =
       (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
-
   int indexBucketSize = 1;
   for (int i = 0; i < DIMENSION; i++) {
     indexBucketSize *= 3;

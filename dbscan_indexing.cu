@@ -50,7 +50,7 @@ using namespace std;
 #define TREE_LEVELS 3
 #define RANGE 2
 #define PARTITION 100
-#define POINTS_SEARCHED 100
+#define POINTS_SEARCHED 200
 
 /**
 **************************************************************************
@@ -458,7 +458,6 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
   for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
     insertData(i, dataset, partition, indexRoot);
   }
-
   __syncthreads();
   
 }
