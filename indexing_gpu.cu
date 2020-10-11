@@ -20,13 +20,6 @@
 
 using namespace std;
 
-struct __align__(8) IndexStructure {
-  int level;
-  double range[2];
-  struct IndexStructure *buckets[PARTITION];
-  int datas[POINTS_SEARCHED];
-};
-
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line,
@@ -42,6 +35,13 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
   * CUDA Data structures
   **************************************************************************
   */
+
+  struct __align__(8) IndexStructure {
+    int level;
+    double range[2];
+    struct IndexStructure *buckets[PARTITION];
+    int datas[POINTS_SEARCHED];
+  };
 
 __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets);
 
