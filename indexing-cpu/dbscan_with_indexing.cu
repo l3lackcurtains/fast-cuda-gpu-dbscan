@@ -16,7 +16,7 @@
 
 using namespace std;
 
-#define PARTITION 240
+#define PARTITION 100
 
 // Number of data in dataset to use
 #define DATASET_COUNT 10000
@@ -26,16 +26,16 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 1024
+#define MAX_SEEDS 512
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 128
 
 // Number of blocks
-#define THREAD_BLOCKS 64
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
-#define THREAD_COUNT 128
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -49,7 +49,7 @@ using namespace std;
 // Epslion value in DBSCAN
 #define EPS 1.5
 
-#define POINTS_SEARCHED 6000
+#define POINTS_SEARCHED 1000
 
 /**
 **************************************************************************
@@ -251,9 +251,6 @@ int main(int argc, char **argv) {
             curr += EPS;
         }
     }
-
-    cout<<partition[0]<<" "<<partition[1]<<endl;
-
     indexConstruction(importedDataset, indexRoot, partition, minPoints);
 
   /**
