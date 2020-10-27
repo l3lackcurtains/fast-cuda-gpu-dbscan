@@ -17,7 +17,7 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 10000
+#define DATASET_COUNT 100000
 
 // #define DATASET_COUNT 1864620
 
@@ -31,10 +31,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 128
 
 // Number of blocks
-#define THREAD_BLOCKS 64
+#define THREAD_BLOCKS 32
 
 // Number of threads per block
-#define THREAD_COUNT 128
+#define THREAD_COUNT 64
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -48,13 +48,13 @@ using namespace std;
 // Epslion value in DBSCAN
 #define EPS 1.5
 
-#define PARTITION 1000
+#define PARTITION 200
 
 #define TREE_LEVELS 3
 
-#define PARTITION_DATA_COUNT 200
+#define PARTITION_DATA_COUNT 500
 
-#define POINTS_SEARCHED 1000
+#define POINTS_SEARCHED 8000
 
 #define RANGE 2
 
@@ -298,6 +298,7 @@ int main(int argc, char **argv) {
   }
 
   for (int i = 0; i < TREE_LEVELS; i++) {
+    
     if (i == 0) {
       startEndIndexes[i*RANGE + 0] = 0;
       startEndIndexes[i*RANGE + 1] = 1;
@@ -343,16 +344,14 @@ int main(int argc, char **argv) {
                          sizeof(struct IndexStructure *),
                          cudaMemcpyHostToDevice));
   }
-
-  int TOTAL_THREADS = THREAD_BLOCKS * THREAD_COUNT;
-  
+ 
   // Allocate memory for current indexed
   struct IndexStructure **d_currentIndexes, *d_currentIndex;
 
   gpuErrchk(cudaMalloc((void **)&d_currentIndexes,
-                       sizeof(struct IndexStructure *) * TOTAL_THREADS));
+                       sizeof(struct IndexStructure *) * THREAD_BLOCKS));
 
-  for (int i = 0; i < TOTAL_THREADS; i++) {
+  for (int i = 0; i < THREAD_BLOCKS; i++) {
     gpuErrchk(cudaMalloc((void **)&d_currentIndex,
                          sizeof(struct IndexStructure)));
     gpuErrchk(cudaMemcpy(&d_currentIndexes[i], &d_currentIndex,
@@ -361,12 +360,12 @@ int main(int argc, char **argv) {
   }
 
   // Allocate memory for current indexes stack
-  int indexBucketSize = RANGE;
+  int indexBucketSize = 1;
   for (int i = 0; i < DIMENSION; i++) {
     indexBucketSize *= 3;
   }
 
-  indexBucketSize = indexBucketSize * TOTAL_THREADS;
+  indexBucketSize = indexBucketSize * THREAD_BLOCKS;
   
   struct IndexStructure **d_indexesStack, *d_currentIndexStack;
 
@@ -380,6 +379,10 @@ int main(int argc, char **argv) {
                          sizeof(struct IndexStructure *),
                          cudaMemcpyHostToDevice));
   }
+
+  cudaFree(d_currentIndexStack);
+  cudaFree(d_currentIndexBucket);
+  cudaFree(d_currentIndex);
   
 
    /**
@@ -389,6 +392,11 @@ int main(int argc, char **argv) {
    */
 
    INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_dataset, d_indexTreeMetaData, d_minPoints, d_partition, d_results, d_indexRoot, d_indexBuckets, d_currentIndexes);
+
+   gpuErrchk(cudaDeviceSynchronize());
+
+   cudaFree(d_indexTreeMetaData);
+   cudaFree(d_minPoints);
 
   
   /**
@@ -414,8 +422,8 @@ int main(int argc, char **argv) {
     int completed = MonitorSeedPoints(unprocessedPoints, &runningCluster,
                                       d_cluster, d_seedList, d_seedLength,
                                       d_collisionMatrix, d_extraCollision, d_results);
-    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
-           unprocessedPoints.size());
+    // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
+    //        unprocessedPoints.size());
     
     // If all points are processed, exit
     if (completed) {
@@ -458,15 +466,6 @@ int main(int argc, char **argv) {
   cudaFree(d_seedLength);
   cudaFree(d_collisionMatrix);
   cudaFree(d_extraCollision);
-  
-
-  cudaFree(d_currentIndexStack);
-
-  cudaFree(d_indexTreeMetaData);
-  cudaFree(d_minPoints);
-
-  cudaFree(d_currentIndexBucket);
-  cudaFree(d_currentIndex);
 
   cudaFree(d_results);
   cudaFree(d_partition);
@@ -900,12 +899,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     }
   }
   __syncthreads();
-
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  if(threadIdx.x == 0) {
-    searchPoints(pointID, chainID, dataset, partition, results, indexRoot, currentIndexes[threadId], indexesStack);
-  }
-  __syncthreads();
+  
 
   /**
    **************************************************************************
@@ -915,6 +909,11 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
    **************************************************************************
    */
 
+   if(threadIdx.x == 0) {
+     searchPoints(pointID, chainID, dataset, partition, results, indexRoot, currentIndexes[chainID], indexesStack);
+   }
+   __syncthreads();
+
   for (int i = threadIdx.x; i < POINTS_SEARCHED; i = i + THREAD_COUNT) {
 
     int nearestPoint = results[chainID*POINTS_SEARCHED + i];
@@ -922,6 +921,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     if(nearestPoint == -1) break;
 
     register double comparingPoint[DIMENSION];
+
     for (int x = 0; x < DIMENSION; x++) {
       comparingPoint[x] = dataset[nearestPoint * DIMENSION + x];
     }
@@ -1069,15 +1069,7 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 
 __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes) {
 
-
-  __shared__ int chainID;
-
   if (threadIdx.x == 0) {
-    chainID = blockIdx.x;
-  }
-  __syncthreads();
-
-  if (threadIdx.x == 0 && chainID == 0) {
     indexBuckets[0] = indexRoot;
   }
   __syncthreads();
@@ -1089,7 +1081,6 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
   __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  
   for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
     insertData(i, dataset, partition, indexRoot, currentIndexes[threadId]);
   }
@@ -1109,6 +1100,8 @@ __device__ void indexConstruction(int dimension, int * indexTreeMetaData, int * 
       int currentBucketIndex =
           indexTreeMetaData[dimension*RANGE + 1] + i +
           (k - indexTreeMetaData[dimension * RANGE + 0]) * partition[dimension];
+
+      
 
       indexBuckets[k]->buckets[i] = indexBuckets[currentBucketIndex];
       indexBuckets[k]->level = dimension;
@@ -1142,8 +1135,9 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
       double leftRange = currentIndex->buckets[k]->range[0];
       double rightRange = currentIndex->buckets[k]->range[1];
 
-      if (comparingData >= leftRange && comparingData <= rightRange) {
+      if (comparingData >= leftRange && comparingData < rightRange) {
         if (dimension == DIMENSION - 1) {
+
           register int dataCountState = atomicAdd(&(currentIndex->buckets[k]->dataCount), 1);
           
           if(dataCountState < PARTITION_DATA_COUNT) {
@@ -1157,8 +1151,6 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
       }
     }
   }
-
-  free(currentIndex);
 }
 
 __device__ void searchPoints(int id, int chainID, double *dataset, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack) {
@@ -1168,12 +1160,17 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
     data[i] = dataset[id * DIMENSION + i];
   }
 
-  int currentIndexSize = 0;
+  int indexBucketSize = 1;
+  for (int i = 0; i < DIMENSION; i++) {
+    indexBucketSize *= 3;
+  }
+  indexBucketSize =  indexBucketSize * chainID;
+  int currentIndexSize = indexBucketSize;
   indexesStack[currentIndexSize++] = indexRoot;
 
   int resultsCount = 0;
 
-  while (currentIndexSize > 0) {
+  while (currentIndexSize > indexBucketSize) {
     
     currentIndex = indexesStack[--currentIndexSize];
 
@@ -1185,27 +1182,21 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
       double leftRange = currentIndex->buckets[k]->range[0];
       double rightRange = currentIndex->buckets[k]->range[1];
 
-      if (comparingData >= leftRange && comparingData <= rightRange) {
+      if (comparingData >= leftRange && comparingData < rightRange) {
 
         if (dimension == DIMENSION - 1) {
           for (int i = 0; i < currentIndex->buckets[k]->dataCount; i++) {
-            results[chainID * POINTS_SEARCHED + resultsCount] = currentIndex->buckets[k]->datas[i];
-              resultsCount++;
+            atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k]->datas[i]);
           }
 
           if (k > 0) {
             for (int i = 0; i < currentIndex->buckets[k - 1]->dataCount; i++) {
-              
-              results[chainID * POINTS_SEARCHED + resultsCount] =
-                    currentIndex->buckets[k - 1]->datas[i];
-                    resultsCount++;
+              atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k-1]->datas[i]);
             }
           }
           if (k < partition[dimension] - 1) {
             for (int i = 0; i < currentIndex->buckets[k + 1]->dataCount; i++) {
-              results[chainID * POINTS_SEARCHED + resultsCount] =
-                    currentIndex->buckets[k + 1]->datas[i];
-                    resultsCount++;
+              atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k + 1]->datas[i]);
             }
           }
           break;
