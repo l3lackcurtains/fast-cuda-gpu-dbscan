@@ -17,7 +17,7 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 100000
+#define DATASET_COUNT 1864620
 
 // #define DATASET_COUNT 1864620
 
@@ -25,16 +25,16 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 512
+#define MAX_SEEDS 2048
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 128
+#define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 32
+#define THREAD_BLOCKS 64
 
 // Number of threads per block
-#define THREAD_COUNT 64
+#define THREAD_COUNT 128
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -48,13 +48,13 @@ using namespace std;
 // Epslion value in DBSCAN
 #define EPS 1.5
 
-#define PARTITION 200
+#define PARTITION 10000
 
 #define TREE_LEVELS 3
 
-#define PARTITION_DATA_COUNT 500
+#define PARTITION_DATA_COUNT 10000
 
-#define POINTS_SEARCHED 8000
+#define POINTS_SEARCHED 50000
 
 #define RANGE 2
 
@@ -223,7 +223,7 @@ int main(int argc, char **argv) {
    struct IndexStructure *d_indexRoot;
    gpuErrchk(cudaMalloc((void **)&d_indexRoot, sizeof(struct IndexStructure)));
  
-   gpuErrchk(cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
+   gpuErrchk(cudaMemset(d_results, UNPROCESSED, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   /**
    **************************************************************************
@@ -237,14 +237,14 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMemset(d_cluster, UNPROCESSED, sizeof(int) * DATASET_COUNT));
 
   gpuErrchk(
-      cudaMemset(d_seedList, -1, sizeof(int) * THREAD_BLOCKS * MAX_SEEDS));
+      cudaMemset(d_seedList, UNPROCESSED, sizeof(int) * THREAD_BLOCKS * MAX_SEEDS));
 
   gpuErrchk(cudaMemset(d_seedLength, 0, sizeof(int) * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
+  gpuErrchk(cudaMemset(d_collisionMatrix, UNPROCESSED,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_extraCollision, -1,
+  gpuErrchk(cudaMemset(d_extraCollision, UNPROCESSED,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   /**
@@ -511,7 +511,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyDeviceToHost));
 
-  gpuErrchk(cudaMemset(d_results, -1,
+  gpuErrchk(cudaMemset(d_results, UNPROCESSED,
                         sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   /**
@@ -736,10 +736,10 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyHostToDevice));
 
-  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
+  gpuErrchk(cudaMemset(d_collisionMatrix, UNPROCESSED,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_extraCollision, -1,
+  gpuErrchk(cudaMemset(d_extraCollision, UNPROCESSED,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   /**
@@ -918,7 +918,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
 
     int nearestPoint = results[chainID*POINTS_SEARCHED + i];
 
-    if(nearestPoint == -1) break;
+    if(nearestPoint == UNPROCESSED) break;
 
     register double comparingPoint[DIMENSION];
 
