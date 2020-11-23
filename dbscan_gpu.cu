@@ -13,8 +13,8 @@ using namespace std;
 
 // Number of data in dataset to use
 
-#define DATASET_COUNT 10000
-// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -23,13 +23,13 @@ using namespace std;
 #define MAX_SEEDS 1024
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 128
+#define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 32
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
-#define THREAD_COUNT 64
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1

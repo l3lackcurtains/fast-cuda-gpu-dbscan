@@ -13,24 +13,23 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 10000
-
 // #define DATASET_COUNT 1864620
+#define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 512
+#define MAX_SEEDS 1024
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 128
+#define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 32
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
-#define THREAD_COUNT 64
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -44,13 +43,14 @@ using namespace std;
 // Epslion value in DBSCAN
 #define EPS 1.5
 
-#define PARTITION 200
+// Dont change
+#define PARTITION 240
 
 #define TREE_LEVELS 3
 
-#define PARTITION_DATA_COUNT 500
+#define PARTITION_DATA_COUNT 100000
 
-#define POINTS_SEARCHED 8000
+#define POINTS_SEARCHED 100000
 
 #define RANGE 2
 
@@ -1232,17 +1232,18 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
 
         if (level == DIMENSION - 1) {
           for (int i = 0; i < currentIndex->buckets[k]->dataCount; i++) {
-            atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k]->datas[i]);
+            results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k]->datas[i];
           }
 
           if (k > 0) {
             for (int i = 0; i < currentIndex->buckets[k - 1]->dataCount; i++) {
-              atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k-1]->datas[i]);
+              results[chainID * POINTS_SEARCHED + resultsCount++] = 
+              currentIndex->buckets[k-1]->datas[i];
             }
           }
           if (k < partition[level] - 1) {
             for (int i = 0; i < currentIndex->buckets[k + 1]->dataCount; i++) {
-              atomicCAS(&(results[chainID * POINTS_SEARCHED + resultsCount++]), UNPROCESSED, currentIndex->buckets[k + 1]->datas[i]);
+              results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k + 1]->datas[i];
             }
           }
           break;
