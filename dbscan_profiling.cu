@@ -43,14 +43,14 @@ using namespace std;
 #define TREE_LEVELS 3
 
 // Epslion value in DBSCAN
-#define EPS 1
+#define EPS 1.5
 
 // Dont change
-#define PARTITION 720
+#define PARTITION 240
 
-#define PARTITION_DATA_COUNT 8000
+#define PARTITION_DATA_COUNT 20000
 
-#define POINTS_SEARCHED 8000
+#define POINTS_SEARCHED 50000
 
 #define RANGE 2
 
@@ -453,14 +453,24 @@ int main(int argc, char **argv) {
   // Handler to conmtrol the while loop
   bool exit = false;
 
+
+  clock_t communicationStart, communicationStop, dbscanKernelStart, dbscanKernelStop;
+  float communicationTime = 0.0;
+  float dbscanKernelTime = 0.0;
+
   while (!exit) {
+
+
+    communicationStart = clock();
     // Monitor the seed list and return the comptetion status of points
     int completed = MonitorSeedPoints(unprocessedPoints, &runningCluster,
                                       d_cluster, d_seedList, d_seedLength,
                                       d_collisionMatrix, d_extraCollision, d_results);
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //        unprocessedPoints.size());
-    
+
+    communicationStop = clock();
+    communicationTime += (float)(communicationStop - communicationStart) / CLOCKS_PER_SEC;
     // If all points are processed, exit
     if (completed) {
       exit = true;
@@ -468,12 +478,15 @@ int main(int argc, char **argv) {
 
     if (exit) break;
 
+    dbscanKernelStart = clock();
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_partition, d_results, d_indexRoot, d_currentIndexes, d_indexesStack);
     gpuErrchk(cudaDeviceSynchronize());
+    dbscanKernelStop = clock();
+    dbscanKernelTime += (float)(dbscanKernelStop - dbscanKernelStart) / CLOCKS_PER_SEC;
   }
 
   /**
@@ -482,19 +495,25 @@ int main(int argc, char **argv) {
    **************************************************************************
    */
 
-     // Get the DBSCAN result
+  communicationStart = clock();
+  // Get the DBSCAN result
   GetDbscanResult(d_dataset, d_cluster, &runningCluster, &clusterCount,
     &noiseCount);
 
-   totalTimeStop = clock();
-   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
-   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
+  communicationStop = clock();
+  communicationTime += (float)(communicationStop - communicationStart) / CLOCKS_PER_SEC;
+
+  totalTimeStop = clock();
+  totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
+  indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 
   printf("==============================================\n");
   printf("Final cluster after merging: %d\n", clusterCount);
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
+  printf("Communication Time: %3.2f seconds\n", communicationTime);
+  printf("DBSCAN kernel Time: %3.2f seconds\n", dbscanKernelTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
 
