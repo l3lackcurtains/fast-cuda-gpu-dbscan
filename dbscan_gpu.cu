@@ -11,8 +11,8 @@
 
 using namespace std;
 
-// Number of data in dataset to use
 
+// Number of data in dataset to use
 #define DATASET_COUNT 1864620
 // #define DATASET_COUNT 100000
 
@@ -20,7 +20,7 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 1024
+#define MAX_SEEDS 128
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
@@ -139,9 +139,9 @@ int main(int argc, char **argv) {
 
 
     // Start the time
-    clock_t totalTimeStart, totalTimeStop;
-    float totalTime = 0.0;
-    totalTimeStart = clock();
+  clock_t totalTimeStart, totalTimeStop;
+  float totalTime = 0.0;
+  totalTimeStart = clock();
 
   /**
    **************************************************************************
@@ -242,19 +242,28 @@ int main(int argc, char **argv) {
    **************************************************************************
    */
 
+   clock_t extraMergeTimeStart, extraMergeTimeStop;
+   float extraMergeTime = 0.0;
+   extraMergeTimeStart = clock();
+
   // Get the DBSCAN result
   GetDbscanResult(d_dataset, d_cluster, &runningCluster, &clusterCount,
-                  &noiseCount);
+    &noiseCount);
+
+  extraMergeTimeStop = clock();
+  extraMergeTime = (float)(extraMergeTimeStop - extraMergeTimeStart) / CLOCKS_PER_SEC;
+
+  totalTimeStop = clock();
+  totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
 
   printf("==============================================\n");
   printf("Final cluster after merging: %d\n", clusterCount);
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
-
-  totalTimeStop = clock();
-  totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
+  printf("Extra Merge Time: %3.2f seconds\n", extraMergeTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
+
 
   /**
    **************************************************************************
@@ -612,10 +621,6 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
   *clusterCount = localClusterCount;
   *noiseCount = localNoiseCount;
 
-  // Output to file
-  ofstream outputFile;
-  outputFile.open("./out/gpu_dbscan_output.txt");
-
   for (int j = 0; j < DATASET_COUNT; j++) {
     if (finalClusterMap[localCluster[j]] >= 0) {
       localCluster[j] = finalClusterMap[localCluster[j]];
@@ -624,11 +629,15 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
     }
   }
 
+  /*
+  // Output to file
+  ofstream outputFile;
+  outputFile.open("./out/gpu_dbscan_output.txt");
   for (int j = 0; j < DATASET_COUNT; j++) {
     outputFile << localCluster[j] << endl;
   }
-
   outputFile.close();
+  */
 
   free(localCluster);
 }

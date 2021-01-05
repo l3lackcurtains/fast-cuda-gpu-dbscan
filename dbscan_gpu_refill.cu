@@ -8,19 +8,22 @@
 #include <map>
 #include <set>
 #include <vector>
-#include <bits/stdc++.h>
 
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 1864620
-// #define DATASET_COUNT 1000
+
+// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 1000000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 128
+#define MAX_SEEDS 1024
+
+// Maximum size of refill seed list
+#define REFILL_MAX_SEEDS 4096
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
@@ -40,19 +43,8 @@ using namespace std;
 // Minimum number of points in DBSCAN
 #define MINPTS 4
 
-#define TREE_LEVELS 3
-
 // Epslion value in DBSCAN
-#define EPS 1.5
-
-// Dont change
-#define PARTITION 480
-
-#define PARTITION_DATA_COUNT 20000
-
-#define POINTS_SEARCHED 50000
-
-#define RANGE 2
+#define EPS 0.5
 
 /**
 **************************************************************************
@@ -75,40 +67,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 /**
 **************************************************************************
 //////////////////////////////////////////////////////////////////////////
-* INDEXING datastructure and functions
-//////////////////////////////////////////////////////////////////////////
-**************************************************************************
-*/
-struct __align__(8) IndexStructure {
-  int level;
-  int dimension;
-  double range[RANGE];
-  struct IndexStructure *buckets[PARTITION];
-  int dataCount = 0;
-  int datas[PARTITION_DATA_COUNT];
-};
-
-__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension);
-
-__device__ void indexConstruction(int dimension, int * indexTreeMetaData, int * partition, double * minPoints, struct IndexStructure **indexBuckets, int * sortedDimension);
-
-__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex);
-
-__device__ void searchPoints(int id, int chainID, double *dataset, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack);
-
-int compare (const void * a, const void * b)
-{
-  return ( *(int*)a - *(int*)b );
-}
-
-int compareDouble(const void * a, const void * b)
-{
-  return ( *(double*)a - *(double*)b );
-}
-
-/**
-**************************************************************************
-//////////////////////////////////////////////////////////////////////////
 * Declare CPU and GPU Functions
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
@@ -117,19 +75,22 @@ int ImportDataset(char const *fname, double *dataset);
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
-                       int *d_collisionMatrix, int *d_extraCollision, int * d_results);
+                       int *d_refillSeedList, int *d_refillSeedLength,
+                       int *d_collisionMatrix, int *d_extraCollision);
 
 void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
                      int *clusterCount, int *noiseCount);
 
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
-                       int *seedLength, int *collisionMatrix,
-                       int *extraCollision, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **currentIndexes, struct IndexStructure **indexesStack);
+                       int *seedLength, int *refillSeedList,
+                       int *refillSeedLength, int *collisionMatrix,
+                       int *extraCollision);
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
                                 int *seedList, int *seedLength,
-
+                                int *refillSeedList, int *refillSeedLength,
                                 int *collisionMatrix, int *extraCollision);
+
 /**
 **************************************************************************
 //////////////////////////////////////////////////////////////////////////
@@ -138,6 +99,11 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 **************************************************************************
 */
 int main(int argc, char **argv) {
+  /**
+   **************************************************************************
+   * Get the dataset file from argument and import data
+   **************************************************************************
+   */
 
   char inputFname[500];
   if (argc != 2) {
@@ -151,7 +117,6 @@ int main(int argc, char **argv) {
 
   double *importedDataset =
       (double *)malloc(sizeof(double) * DATASET_COUNT * DIMENSION);
-
 
   // Import data from dataset
   int ret = ImportDataset(inputFname, importedDataset);
@@ -179,9 +144,8 @@ int main(int argc, char **argv) {
 
 
     // Start the time
-    clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
+    clock_t totalTimeStart, totalTimeStop;
     float totalTime = 0.0;
-    float indexingTime = 0.0;
     totalTimeStart = clock();
 
   /**
@@ -193,6 +157,8 @@ int main(int argc, char **argv) {
   int *d_cluster;
   int *d_seedList;
   int *d_seedLength;
+  int *d_refillSeedList;
+  int *d_refillSeedLength;
   int *d_collisionMatrix;
   int *d_extraCollision;
 
@@ -206,41 +172,17 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMalloc((void **)&d_seedLength, sizeof(int) * THREAD_BLOCKS));
 
+  gpuErrchk(cudaMalloc((void **)&d_refillSeedList,
+  sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS));
+
+  gpuErrchk(
+  cudaMalloc((void **)&d_refillSeedLength, sizeof(int) * THREAD_BLOCKS));
+
   gpuErrchk(cudaMalloc((void **)&d_collisionMatrix,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
   gpuErrchk(cudaMalloc((void **)&d_extraCollision,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
-
-    /**
-   **************************************************************************
-   * Indexing Memory allocation
-   **************************************************************************
-   */
-
-   indexingStart = clock();
-
-   int *d_indexTreeMetaData;
-   int *d_results;
-   int *d_partition;
-   int *d_sortedDimension;
-   double *d_minPoints;
- 
-   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData, sizeof(int) * TREE_LEVELS * RANGE));
- 
-   gpuErrchk(cudaMalloc((void **)&d_results, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
- 
-   gpuErrchk(cudaMalloc((void **)&d_partition, sizeof(int) * DIMENSION));
-
-   gpuErrchk(cudaMalloc((void **)&d_sortedDimension, sizeof(int) * DIMENSION));
- 
-   gpuErrchk(cudaMalloc((void **)&d_minPoints, sizeof(double) * DIMENSION));
- 
- 
-   struct IndexStructure *d_indexRoot;
-   gpuErrchk(cudaMalloc((void **)&d_indexRoot, sizeof(struct IndexStructure)));
- 
-   gpuErrchk(cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   /**
    **************************************************************************
@@ -258,183 +200,17 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMemset(d_seedLength, 0, sizeof(int) * THREAD_BLOCKS));
 
+  gpuErrchk(cudaMemset(d_refillSeedList, -1,
+    sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS));
+
+gpuErrchk(cudaMemset(d_refillSeedLength, 0, sizeof(int) * THREAD_BLOCKS));
+
   gpuErrchk(cudaMemset(d_collisionMatrix, -1,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
   gpuErrchk(cudaMemset(d_extraCollision, -1,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
-  /**
-  **************************************************************************
-  * Initialize index structure
-  **************************************************************************
-  */
-  double maxPoints[DIMENSION];
-  double minPoints[DIMENSION];
-
-  for (int j = 0; j < DIMENSION; j++) {
-    maxPoints[j] = 0;
-    minPoints[j] = 999999999;
-  }
-
-  for (int i = 0; i < DATASET_COUNT; i++) {
-    for (int j = 0; j < DIMENSION; j++) {
-      if (importedDataset[i * DIMENSION + j] > maxPoints[j]) {
-        maxPoints[j] = importedDataset[i * DIMENSION + j];
-      }
-      if (importedDataset[i * DIMENSION + j] < minPoints[j]) {
-        minPoints[j] = importedDataset[i * DIMENSION + j];
-      }
-    }
-  }
-
-  int *partition = (int *)malloc(sizeof(int) * DIMENSION);
-
-  for (int i = 0; i < DIMENSION; i++) {
-    partition[i] = 0;
-    double curr = minPoints[i];
-    while (curr < maxPoints[i]) {
-      partition[i]++;
-      curr += EPS;
-    }
-  }
-
-
-  // Dimension sorting
-  map<int, int> dimensionPartitionMap;
-  int *sortedDimension = (int *)malloc(sizeof(int) * DIMENSION);
-
-  for(int i = 0; i < DIMENSION; i++) {
-    dimensionPartitionMap[partition[i]] = i;
-  }
-
-  qsort(partition, DIMENSION, sizeof(int), compare);
-  qsort(minPoints, DIMENSION, sizeof(double), compareDouble);
-
-  for(int i = 0; i < DIMENSION; i++) {
-      sortedDimension[i] = dimensionPartitionMap[partition[i]];
-  }
-
-  // Level Partition
-  int treeLevelPartition[TREE_LEVELS] = {1};
-
-  for (int i = 0; i < DIMENSION; i++) {
-    treeLevelPartition[i + 1] = partition[i];
-  }
-
-  int childItems[TREE_LEVELS];
-  int startEndIndexes[TREE_LEVELS*RANGE];
-
-  int mulx = 1;
-  for (int k = 0; k < TREE_LEVELS; k++) {
-    mulx *= treeLevelPartition[k];
-    childItems[k] = mulx;
-  }
-
-  for (int i = 0; i < TREE_LEVELS; i++) {
-    
-    if (i == 0) {
-      startEndIndexes[i*RANGE + 0] = 0;
-      startEndIndexes[i*RANGE + 1] = 1;
-      continue;
-    }
-    startEndIndexes[i*RANGE + 0] = startEndIndexes[((i - 1)*RANGE) + 1];
-    startEndIndexes[i*RANGE + 1] = startEndIndexes[i*RANGE + 0];
-    for (int k = 0; k < childItems[i - 1]; k++) {
-      startEndIndexes[i*RANGE + 1] += treeLevelPartition[i];
-    }
-  }
-
-  gpuErrchk(cudaMemcpy(d_partition, partition, sizeof(int) * DIMENSION,
-                       cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemcpy(d_sortedDimension, sortedDimension, sizeof(int) * DIMENSION, cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemcpy(d_minPoints, minPoints, sizeof(double) * DIMENSION,
-                       cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemcpy(d_indexTreeMetaData, startEndIndexes,
-                       sizeof(int) * TREE_LEVELS * RANGE,
-                       cudaMemcpyHostToDevice));
-
-  int indexedStructureSize = 1;
-  for (int i = 0; i < DIMENSION; i++) {
-    indexedStructureSize *= partition[i];
-  }
-
-  for (int i = 0; i < DIMENSION - 1; i++) {
-    indexedStructureSize += partition[i];
-  }
-  indexedStructureSize = indexedStructureSize + 1;
-
-  // Allocate memory for index buckets
-  struct IndexStructure **d_indexBuckets, *d_currentIndexBucket;
-
-  gpuErrchk(cudaMalloc((void **)&d_indexBuckets,
-                       sizeof(struct IndexStructure *) * indexedStructureSize));
-
-  for (int i = 0; i < indexedStructureSize; i++) {
-    gpuErrchk(cudaMalloc((void **)&d_currentIndexBucket,
-                         sizeof(struct IndexStructure)));
-    gpuErrchk(cudaMemcpy(&d_indexBuckets[i], &d_currentIndexBucket,
-                         sizeof(struct IndexStructure *),
-                         cudaMemcpyHostToDevice));
-  }
- 
-  // Allocate memory for current indexed
-  struct IndexStructure **d_currentIndexes, *d_currentIndex;
-
-  gpuErrchk(cudaMalloc((void **)&d_currentIndexes,
-                       sizeof(struct IndexStructure *) * THREAD_BLOCKS));
-
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    gpuErrchk(cudaMalloc((void **)&d_currentIndex,
-                         sizeof(struct IndexStructure)));
-    gpuErrchk(cudaMemcpy(&d_currentIndexes[i], &d_currentIndex,
-                         sizeof(struct IndexStructure *),
-                         cudaMemcpyHostToDevice));
-  }
-
-  // Allocate memory for current indexes stack
-  int indexBucketSize = 1;
-  for (int i = 0; i < DIMENSION; i++) {
-    indexBucketSize *= 3;
-  }
-
-  indexBucketSize = indexBucketSize * THREAD_BLOCKS;
-  
-  struct IndexStructure **d_indexesStack, *d_currentIndexStack;
-
-  gpuErrchk(cudaMalloc((void **)&d_indexesStack,
-                       sizeof(struct IndexStructure *) * indexBucketSize));
-
-  for (int i = 0; i < indexBucketSize; i++) {
-    gpuErrchk(cudaMalloc((void **)&d_currentIndexStack,
-                         sizeof(struct IndexStructure)));
-    gpuErrchk(cudaMemcpy(&d_indexesStack[i], &d_currentIndexStack,
-                         sizeof(struct IndexStructure *),
-                         cudaMemcpyHostToDevice));
-  }
-
-  cudaFree(d_currentIndexStack);
-  cudaFree(d_currentIndexBucket);
-  cudaFree(d_currentIndex);
-  
-
-   /**
-   **************************************************************************
-   * Start Indexing first
-   **************************************************************************
-   */
-
-   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_dataset, d_indexTreeMetaData, d_minPoints, d_partition, d_results, d_indexRoot, d_indexBuckets, d_currentIndexes, d_sortedDimension);
-
-   gpuErrchk(cudaDeviceSynchronize());
-
-   cudaFree(d_indexTreeMetaData);
-   cudaFree(d_minPoints);
-
-   indexingStop = clock();
   /**
    **************************************************************************
    * Start the DBSCAN algorithm
@@ -457,10 +233,13 @@ int main(int argc, char **argv) {
     // Monitor the seed list and return the comptetion status of points
     int completed = MonitorSeedPoints(unprocessedPoints, &runningCluster,
                                       d_cluster, d_seedList, d_seedLength,
-                                      d_collisionMatrix, d_extraCollision, d_results);
+                                      d_refillSeedList, d_refillSeedLength,
+                                      d_collisionMatrix, d_extraCollision);
+    
+    
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //        unprocessedPoints.size());
-    
+
     // If all points are processed, exit
     if (completed) {
       exit = true;
@@ -471,8 +250,8 @@ int main(int argc, char **argv) {
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-        d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
-        d_extraCollision, d_partition, d_results, d_indexRoot, d_currentIndexes, d_indexesStack);
+        d_dataset, d_cluster, d_seedList, d_seedLength, d_refillSeedList, d_refillSeedLength, d_collisionMatrix,
+        d_extraCollision);
     gpuErrchk(cudaDeviceSynchronize());
   }
 
@@ -482,19 +261,17 @@ int main(int argc, char **argv) {
    **************************************************************************
    */
 
-     // Get the DBSCAN result
+  // Get the DBSCAN result
   GetDbscanResult(d_dataset, d_cluster, &runningCluster, &clusterCount,
-    &noiseCount);
-
-   totalTimeStop = clock();
-   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
-   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
+                  &noiseCount);
 
   printf("==============================================\n");
   printf("Final cluster after merging: %d\n", clusterCount);
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
-  printf("Indexing Time: %3.2f seconds\n", indexingTime);
+
+  totalTimeStop = clock();
+  totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
 
@@ -502,21 +279,15 @@ int main(int argc, char **argv) {
    **************************************************************************
    * Free CUDA memory allocations
    **************************************************************************
-  */
-  
+   */
   cudaFree(d_dataset);
   cudaFree(d_cluster);
   cudaFree(d_seedList);
   cudaFree(d_seedLength);
+  cudaFree(d_refillSeedList);
+  cudaFree(d_refillSeedLength);
   cudaFree(d_collisionMatrix);
   cudaFree(d_extraCollision);
-
-  cudaFree(d_results);
-  cudaFree(d_partition);
-  cudaFree(d_indexBuckets);
-  cudaFree(d_indexRoot);
-  cudaFree(d_indexesStack);
-  cudaFree(d_currentIndexes);
 }
 
 /**
@@ -537,26 +308,36 @@ int main(int argc, char **argv) {
 */
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
-                       int *d_cluster, int *d_seedList, int *d_seedLength,
-                       int *d_collisionMatrix, int *d_extraCollision, int * d_results) {
+  int *d_cluster, int *d_seedList, int *d_seedLength,
+  int *d_refillSeedList, int *d_refillSeedLength,
+  int *d_collisionMatrix, int *d_extraCollision) {
   /**
    **************************************************************************
    * Copy GPU variables content to CPU variables for seed list management
    **************************************************************************
    */
+
+   int *localSeedList;
+   localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
+   gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
+                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                        cudaMemcpyDeviceToHost));
   int *localSeedLength;
   localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
   gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
                        sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
 
-  int *localSeedList;
-  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
-  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
-                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                       cudaMemcpyDeviceToHost));
+  int *localRefillSeedList;
+  localRefillSeedList =
+      (int *)malloc(sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS);
+  gpuErrchk(cudaMemcpy(localRefillSeedList, d_refillSeedList,
+                      sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS,
+                      cudaMemcpyDeviceToHost));
 
-  gpuErrchk(cudaMemset(d_results, -1,
-                        sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
+  int *localRefillSeedLength;
+  localRefillSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
+  gpuErrchk(cudaMemcpy(localRefillSeedLength, d_refillSeedLength,
+                        sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
 
   /**
    **************************************************************************
@@ -567,12 +348,31 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
    */
 
   int completeSeedListFirst = false;
+  int refilled = false;
 
   // Check if the seed list is empty
   for (int i = 0; i < THREAD_BLOCKS; i++) {
     // If seed list is not empty set completeSeedListFirst as true
     if (localSeedLength[i] > 0) {
       completeSeedListFirst = true;
+      break;
+    }
+    // If seed list is empty then, the seed list is loaded with data from
+    // refill seed list, If refilling is done refill is set true
+    else {
+      if (localRefillSeedLength[i] > 0) {
+        while (localSeedLength[i] < MAX_SEEDS && localRefillSeedLength[i] > 0) {
+          localRefillSeedLength[i] = localRefillSeedLength[i] - 1;
+
+          localSeedList[i * MAX_SEEDS + localSeedLength[i]] =
+              localRefillSeedList[i * REFILL_MAX_SEEDS +
+                                  localRefillSeedLength[i]];
+
+          localSeedLength[i] = localSeedLength[i] + 1;
+        }
+        refilled = true;
+        break;
+      }
     }
   }
 
@@ -585,6 +385,26 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
   if (completeSeedListFirst) {
     free(localSeedList);
     free(localSeedLength);
+    free(localRefillSeedList);
+    free(localRefillSeedLength);
+    return false;
+  }
+
+  if (refilled) {
+    gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
+                         sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+
+    gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
+                         sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                         cudaMemcpyHostToDevice));
+
+    gpuErrchk(cudaMemcpy(d_refillSeedLength, localRefillSeedLength,
+                         sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+
+    free(localSeedList);
+    free(localSeedLength);
+    free(localRefillSeedList);
+    free(localRefillSeedLength);
     return false;
   }
 
@@ -707,6 +527,14 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
     }
   }
 
+  // for (int i = 0; i < THREAD_BLOCKS; i++) {
+  //   printf("%d: ", i);
+  //   for (int j = 0; j < localClusterMerge[i].size(); j++) {
+  //     printf("%d, ", localClusterMerge[i][j]);
+  //   }
+  //   printf("\n");
+  // }
+
   // Check extra collision with cluster ID greater than thread block
   for (int i = 0; i < localClusterMerge.size(); i++) {
     if (localClusterMerge[i].empty()) continue;
@@ -795,6 +623,8 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
   free(localCluster);
   free(localSeedList);
   free(localSeedLength);
+  free(localRefillSeedList);
+  free(localRefillSeedLength);
   free(localCollisionMatrix);
   free(localExtraCollision);
 
@@ -866,14 +696,12 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
   }
 
   /*
-  // Output to file
   ofstream outputFile;
   outputFile.open("./out/gpu_dbscan_output.txt");
   for (int j = 0; j < DATASET_COUNT; j++) {
     outputFile << localCluster[j] << endl;
   }
   outputFile.close();
-
   */
 
   free(localCluster);
@@ -892,8 +720,9 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
 **************************************************************************
 */
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
-                       int *seedLength, int *collisionMatrix,
-                       int *extraCollision, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **currentIndexes, struct IndexStructure **indexesStack) {
+                       int *seedLength, int *refillSeedList,
+                       int *refillSeedLength, int *collisionMatrix,
+                       int *extraCollision) {
   /**
    **************************************************************************
    * Define shared variables
@@ -944,7 +773,6 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     }
   }
   __syncthreads();
-  
 
   /**
    **************************************************************************
@@ -953,22 +781,10 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
    * Keep record of left over neighbors in neighborBuffer
    **************************************************************************
    */
-
-   if(threadIdx.x == 0) {
-     searchPoints(pointID, chainID, dataset, partition, results, indexRoot, currentIndexes[chainID], indexesStack);
-   }
-   __syncthreads();
-
-  for (int i = threadIdx.x; i < POINTS_SEARCHED; i = i + THREAD_COUNT) {
-
-    int nearestPoint = results[chainID*POINTS_SEARCHED + i];
-
-    if(nearestPoint == -1) break;
-
+  for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
     register double comparingPoint[DIMENSION];
-
     for (int x = 0; x < DIMENSION; x++) {
-      comparingPoint[x] = dataset[nearestPoint * DIMENSION + x];
+      comparingPoint[x] = dataset[i * DIMENSION + x];
     }
 
     // find the distance between the points
@@ -982,10 +798,9 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     if (distance <= EPS * EPS) {
       register int currentNeighborCount = atomicAdd(&neighborCount, 1);
       if (currentNeighborCount >= MINPTS) {
-        MarkAsCandidate(nearestPoint, chainID, cluster, seedList, seedLength,
-                        collisionMatrix, extraCollision);
+        MarkAsCandidate(i, chainID, cluster, seedList, seedLength,refillSeedList, refillSeedLength, collisionMatrix, extraCollision);
       } else {
-        neighborBuffer[currentNeighborCount] = nearestPoint;
+        neighborBuffer[currentNeighborCount] = i;
       }
     }
   }
@@ -1001,8 +816,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   if (neighborCount >= MINPTS) {
     cluster[pointID] = chainID;
     for (int i = threadIdx.x; i < MINPTS; i = i + THREAD_COUNT) {
-      MarkAsCandidate(neighborBuffer[i], chainID, cluster, seedList, seedLength,
-                      collisionMatrix, extraCollision);
+      MarkAsCandidate(neighborBuffer[i], chainID, cluster, seedList, seedLength, refillSeedList, refillSeedLength, collisionMatrix, extraCollision);
     }
   } else {
     cluster[pointID] = NOISE;
@@ -1019,6 +833,11 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
 
   if (threadIdx.x == 0 && seedLength[chainID] >= MAX_SEEDS) {
     seedLength[chainID] = MAX_SEEDS - 1;
+  }
+  __syncthreads();
+
+  if (threadIdx.x == 0 && refillSeedLength[chainID] >= REFILL_MAX_SEEDS) {
+    refillSeedLength[chainID] = REFILL_MAX_SEEDS - 1;
   }
   __syncthreads();
 }
@@ -1040,8 +859,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
 */
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
-                                int *seedList, int *seedLength,
-                                int *collisionMatrix, int *extraCollision) {
+                                int *seedList, int *seedLength, int *refillSeedList, int *refillSeedLength, int *collisionMatrix, int *extraCollision) {
   /**
   **************************************************************************
   * Get the old cluster state of the neighbor
@@ -1061,6 +879,11 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
     register int sl = atomicAdd(&(seedLength[chainID]), 1);
     if (sl < MAX_SEEDS) {
       seedList[chainID * MAX_SEEDS + sl] = neighborID;
+    }  else {
+      register int rsl = atomicAdd(&(refillSeedLength[chainID]), 1);
+      if (rsl < REFILL_MAX_SEEDS) {
+        refillSeedList[chainID * REFILL_MAX_SEEDS + rsl] = neighborID;
+      }
     }
   }
 
@@ -1070,16 +893,7 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
    **************************************************************************
    */
 
-  else if (oldState >= THREAD_BLOCKS) {
-    for (int i = 0; i < EXTRA_COLLISION_SIZE; i++) {
-      register int changedState =
-          atomicCAS(&(extraCollision[chainID * EXTRA_COLLISION_SIZE + i]),
-                    UNPROCESSED, oldState);
-      if (changedState == UNPROCESSED || changedState == oldState) {
-        break;
-      }
-    }
-  }
+
 
   /**
    **************************************************************************
@@ -1102,168 +916,6 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
     oldState = atomicCAS(&(cluster[neighborID]), NOISE, chainID);
   }
 }
-
-/**
-**************************************************************************
-//////////////////////////////////////////////////////////////////////////
-* Helper functions for index construction and points search...
-//////////////////////////////////////////////////////////////////////////
-**************************************************************************
-*/
-
-
-__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension) {
-
-  if (threadIdx.x == 0) {
-    indexBuckets[0] = indexRoot;
-  }
-  __syncthreads();
-
-
-  for(int i = 0; i <= DIMENSION; i++) {
-    indexConstruction(i, indexTreeMetaData, partition, minPoints, indexBuckets, sortedDimension);
-  }
-  __syncthreads();
-
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
-    insertData(i, dataset, partition, indexRoot, currentIndexes[threadId]);
-  }
-  __syncthreads();
-  
-}
-
-__device__ void indexConstruction(int level, int * indexTreeMetaData, int * partition, double * minPoints, struct IndexStructure **indexBuckets, int * sortedDimension) {
-
-
-  if (level > DIMENSION) return;
-
-  for (int k = blockIdx.x + indexTreeMetaData[level*RANGE + 0];
-       k < indexTreeMetaData[level*RANGE + 1]; k = k + THREAD_BLOCKS) {
-    
-    for (int i = threadIdx.x; i < partition[level]; i = i + THREAD_COUNT) {
-      int currentBucketIndex =
-          indexTreeMetaData[level*RANGE + 1] + i +
-          (k - indexTreeMetaData[level * RANGE + 0]) * partition[level];
-
-      indexBuckets[k]->buckets[i] = indexBuckets[currentBucketIndex];
-      indexBuckets[k]->level = level;
-      indexBuckets[k]->dimension = sortedDimension[level];
-
-      double leftPoint = minPoints[level] + i * EPS;
-      double rightPoint = leftPoint + EPS;
-
-      indexBuckets[k]->buckets[i]->range[0] = leftPoint;
-      indexBuckets[k]->buckets[i]->range[1] = rightPoint;
-    }
-  }
-
-}
-
-__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex) {
-
-
-  double data[DIMENSION];
-
-  for (int j = 0; j < DIMENSION; j++) {
-    data[j] = dataset[id * DIMENSION + j];
-  }
-
-  currentIndex = indexRoot;
-  bool found = false;
-
-  while (!found) {
-    int level = currentIndex->level;
-    int dimension = currentIndex->dimension;
-
-    for (int k = 0; k < partition[level]; k++) {
-      double comparingData = data[dimension];
-      double leftRange = currentIndex->buckets[k]->range[0];
-      double rightRange = currentIndex->buckets[k]->range[1];
-
-      if (comparingData >= leftRange && comparingData < rightRange) {
-        if (level == DIMENSION - 1) {
-
-          register int dataCountState = atomicAdd(&(currentIndex->buckets[k]->dataCount), 1);
-          
-          if(dataCountState < PARTITION_DATA_COUNT) {
-            currentIndex->buckets[k]->datas[dataCountState] = id;
-          }
-          found = true;
-          break;
-        }
-        currentIndex = currentIndex->buckets[k];
-        break;
-      }
-    }
-  }
-}
-
-__device__ void searchPoints(int id, int chainID, double *dataset, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack) {
-
-  double data[DIMENSION];
-  for (int i = 0; i < DIMENSION; i++) {
-    data[i] = dataset[id * DIMENSION + i];
-  }
-
-  int indexBucketSize = 1;
-  for (int i = 0; i < DIMENSION; i++) {
-    indexBucketSize *= 3;
-  }
-  indexBucketSize =  indexBucketSize * chainID;
-  int currentIndexSize = indexBucketSize;
-  indexesStack[currentIndexSize++] = indexRoot;
-
-  int resultsCount = 0;
-
-  while (currentIndexSize > indexBucketSize) {
-    
-    currentIndex = indexesStack[--currentIndexSize];
-
-    int level = currentIndex->level;
-    int dimension = currentIndex->dimension;
-
-    for (int k = 0; k < partition[level]; k++) {
-
-      double comparingData = data[dimension];
-      double leftRange = currentIndex->buckets[k]->range[0];
-      double rightRange = currentIndex->buckets[k]->range[1];
-
-      if (comparingData >= leftRange && comparingData < rightRange) {
-
-        if (level == DIMENSION - 1) {
-          for (int i = 0; i < currentIndex->buckets[k]->dataCount; i++) {
-            results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k]->datas[i];
-          }
-
-          if (k > 0) {
-            for (int i = 0; i < currentIndex->buckets[k - 1]->dataCount; i++) {
-              results[chainID * POINTS_SEARCHED + resultsCount++] = 
-              currentIndex->buckets[k-1]->datas[i];
-            }
-          }
-          if (k < partition[level] - 1) {
-            for (int i = 0; i < currentIndex->buckets[k + 1]->dataCount; i++) {
-              results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k + 1]->datas[i];
-            }
-          }
-          break;
-        }
-
-
-        indexesStack[currentIndexSize++] = currentIndex->buckets[k];
-        if (k > 0) {
-          indexesStack[currentIndexSize++] = currentIndex->buckets[k - 1];
-        }
-        if (k < partition[level] - 1) {
-          indexesStack[currentIndexSize++] = currentIndex->buckets[k + 1];
-        }
-        break;
-      }
-    }
-  }
-}
-
 
 /**
 **************************************************************************
