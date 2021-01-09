@@ -13,8 +13,8 @@ using namespace std;
 
 // Number of data in dataset to use
 
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 1000000
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 1000000
 
 // Dimension of the dataset
 #define DIMENSION 2
