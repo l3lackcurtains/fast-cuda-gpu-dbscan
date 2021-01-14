@@ -11,7 +11,6 @@
 
 using namespace std;
 
-
 // Number of data in dataset to use
 #define DATASET_COUNT 1864620
 // #define DATASET_COUNT 100000
