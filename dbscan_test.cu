@@ -1177,16 +1177,14 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
   bool found = false;
 
   while (!found) {
-    int level = currentIndex->level;
-    int dimension = currentIndex->dimension;
 
-    for (int k = 0; k < partition[level]; k++) {
-      double comparingData = data[dimension];
+    for (int k = 0; k < partition[currentIndex->level]; k++) {
+      double comparingData = data[currentIndex->dimension];
       double leftRange = currentIndex->buckets[k]->range[0];
       double rightRange = currentIndex->buckets[k]->range[1];
       
       if (comparingData >= leftRange && comparingData < rightRange) {
-        if (level == DIMENSION - 1) {
+        if (currentIndex->level == DIMENSION - 1) {
 
           register int dataCountState = atomicAdd(&(currentIndex->buckets[k]->dataCount), 1);
          
@@ -1224,18 +1222,15 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
     
     currentIndex = indexesStack[--currentIndexSize];
 
-    int level = currentIndex->level;
-    int dimension = currentIndex->dimension;
+    for (int k = 0; k < partition[currentIndex->level]; k++) {
 
-    for (int k = 0; k < partition[level]; k++) {
-
-      double comparingData = data[dimension];
+      double comparingData = data[currentIndex->dimension];
       double leftRange = currentIndex->buckets[k]->range[0];
       double rightRange = currentIndex->buckets[k]->range[1];
 
       if (comparingData >= leftRange && comparingData < rightRange) {
 
-        if (level == DIMENSION - 1) {
+        if (currentIndex->level == DIMENSION - 1) {
           for (int i = 0; i < currentIndex->buckets[k]->dataCount; i++) {
             results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k]->datas[i];
           }
@@ -1246,7 +1241,7 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
               currentIndex->buckets[k-1]->datas[i];
             }
           }
-          if (k < partition[level] - 1) {
+          if (k < partition[currentIndex->level] - 1) {
             for (int i = 0; i < currentIndex->buckets[k + 1]->dataCount; i++) {
               results[chainID * POINTS_SEARCHED + resultsCount++] = currentIndex->buckets[k + 1]->datas[i];
             }
@@ -1259,7 +1254,7 @@ __device__ void searchPoints(int id, int chainID, double *dataset, int * partiti
         if (k > 0) {
           indexesStack[currentIndexSize++] = currentIndex->buckets[k - 1];
         }
-        if (k < partition[level] - 1) {
+        if (k < partition[currentIndex->level] - 1) {
           indexesStack[currentIndexSize++] = currentIndex->buckets[k + 1];
         }
         break;
