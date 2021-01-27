@@ -14,7 +14,7 @@ using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 20000
+#define DATASET_COUNT 500000
 
 // Dimension of the dataset
 #define DIMENSION 3
@@ -26,10 +26,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 32
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
-#define THREAD_COUNT 64
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -43,14 +43,14 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION+1)
 
 // Epslion value in DBSCAN
-#define EPS 5
+#define EPS 4
 
 // Dont change
-#define PARTITION 20
+#define PARTITION 25
 
-#define PARTITION_DATA_COUNT 1000
+#define PARTITION_DATA_COUNT 50000
 
-#define POINTS_SEARCHED 3000
+#define POINTS_SEARCHED 150000
 
 #define RANGE 2
 
@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
   }
 
   // Check if the data parsed is correct
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < DIMENSION; i++) {
     printf("Sample Data %f\n", importedDataset[i]);
   }
 
@@ -178,11 +178,11 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaFree(0));
 
 
-    // Start the time
-    clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
-    float totalTime = 0.0;
-    float indexingTime = 0.0;
-    totalTimeStart = clock();
+  // Start the time
+  clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
+  float totalTime = 0.0;
+  float indexingTime = 0.0;
+  totalTimeStart = clock();
 
   /**
    **************************************************************************
@@ -386,9 +386,9 @@ int main(int argc, char **argv) {
   struct IndexStructure **d_currentIndexes, *d_currentIndex;
 
   gpuErrchk(cudaMalloc((void **)&d_currentIndexes,
-                       sizeof(struct IndexStructure *) * THREAD_BLOCKS));
+                       sizeof(struct IndexStructure *) * THREAD_COUNT));
 
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
+  for (int i = 0; i < THREAD_COUNT; i++) {
     gpuErrchk(cudaMalloc((void **)&d_currentIndex,
                          sizeof(struct IndexStructure)));
     gpuErrchk(cudaMemcpy(&d_currentIndexes[i], &d_currentIndex,
@@ -1120,7 +1120,6 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
   }
   __syncthreads();
 
-
   for(int i = 0; i <= DIMENSION; i++) {
     indexConstruction(i, indexTreeMetaData, partition, minPoints, indexBuckets, sortedDimension);
   }
@@ -1128,7 +1127,7 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
-    insertData(i, dataset, partition, indexRoot, currentIndexes[threadId]);
+    insertData(i, dataset, partition, indexRoot, currentIndexes[threadIdx.x]);
   }
   __syncthreads();
   
@@ -1154,8 +1153,12 @@ __device__ void indexConstruction(int level, int * indexTreeMetaData, int * part
       double leftPoint = minPoints[level] + i * EPS;
       double rightPoint = leftPoint + EPS;
 
+      if(i == 0) leftPoint = leftPoint - EPS;
+      if(i == partition[level] - 1) rightPoint = rightPoint + EPS;
+
       indexBuckets[k]->buckets[i]->range[0] = leftPoint;
       indexBuckets[k]->buckets[i]->range[1] = rightPoint;
+      indexBuckets[k]->buckets[i]->dataCount = 0;
     }
   }
 
@@ -1181,14 +1184,14 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
       double comparingData = data[dimension];
       double leftRange = currentIndex->buckets[k]->range[0];
       double rightRange = currentIndex->buckets[k]->range[1];
-
+      
       if (comparingData >= leftRange && comparingData < rightRange) {
         if (level == DIMENSION - 1) {
 
           register int dataCountState = atomicAdd(&(currentIndex->buckets[k]->dataCount), 1);
-          
+         
           if(dataCountState < PARTITION_DATA_COUNT) {
-            currentIndex->buckets[k]->datas[dataCountState] = id;
+            atomicCAS(&(currentIndex->buckets[k]->datas[dataCountState]), -1, id);
           }
           found = true;
           break;
