@@ -10,11 +10,17 @@
 #include <vector>
 #include <bits/stdc++.h>
 
+#include <thrust/binary_search.h>
+#include <thrust/device_vector.h>
+#include <thrust/functional.h>
+#include <thrust/execution_policy.h>
+#include <thrust/sort.h>
+
 using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 500000
+#define DATASET_COUNT 8000
 
 // Dimension of the dataset
 #define DIMENSION 3
@@ -43,14 +49,14 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION+1)
 
 // Epslion value in DBSCAN
-#define EPS 4
+#define EPS 6
 
 // Dont change
-#define PARTITION 25
+#define PARTITION 20
 
-#define PARTITION_DATA_COUNT 50000
+#define PARTITION_DATA_COUNT 1000
 
-#define POINTS_SEARCHED 150000
+#define POINTS_SEARCHED 3000
 
 #define RANGE 2
 
@@ -80,6 +86,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 **************************************************************************
 */
 struct __align__(8) IndexStructure {
+  int id;
   int level;
   int dimension;
   double range[RANGE];
@@ -88,11 +95,11 @@ struct __align__(8) IndexStructure {
   int datas[PARTITION_DATA_COUNT];
 };
 
-__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension);
+__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension, int *dataKey, int *dataValue);
 
 __device__ void indexConstruction(int dimension, int * indexTreeMetaData, int * partition, double * minPoints, struct IndexStructure **indexBuckets, int * sortedDimension);
 
-__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex);
+__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, int *dataKey, int *dataValue);
 
 __device__ void searchPoints(int id, int chainID, double *dataset, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, struct IndexStructure **indexesStack);
 
@@ -420,7 +427,18 @@ int main(int argc, char **argv) {
   cudaFree(d_currentIndexStack);
   cudaFree(d_currentIndexBucket);
   cudaFree(d_currentIndex);
-  
+
+ /**
+   **************************************************************************
+   * Data key-value pair
+   **************************************************************************
+   */
+  int *d_dataKey;
+  int *d_dataValue;
+
+  gpuErrchk(cudaMalloc((void **)&d_dataKey, sizeof(int) * DATASET_COUNT));
+  gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
+
 
    /**
    **************************************************************************
@@ -428,7 +446,7 @@ int main(int argc, char **argv) {
    **************************************************************************
    */
 
-   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_dataset, d_indexTreeMetaData, d_minPoints, d_partition, d_results, d_indexRoot, d_indexBuckets, d_currentIndexes, d_sortedDimension);
+   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_dataset, d_indexTreeMetaData, d_minPoints, d_partition, d_results, d_indexRoot, d_indexBuckets, d_currentIndexes, d_sortedDimension, d_dataKey, d_dataValue);
 
    gpuErrchk(cudaDeviceSynchronize());
 
@@ -436,6 +454,37 @@ int main(int argc, char **argv) {
    cudaFree(d_minPoints);
 
    indexingStop = clock();
+
+
+   /**
+   **************************************************************************
+   * Data key-value pair after indexing
+   **************************************************************************
+   */
+   int *h_dataKey;
+   int *h_dataValue;
+
+  h_dataKey = (int *)malloc(sizeof(int) * DATASET_COUNT);
+  gpuErrchk(cudaMemcpy(h_dataKey, d_dataKey,
+                       sizeof(int) * DATASET_COUNT, cudaMemcpyDeviceToHost));
+
+  h_dataValue = (int *)malloc(sizeof(int) * DATASET_COUNT);
+  gpuErrchk(cudaMemcpy(h_dataValue, d_dataValue,
+                      sizeof(int) * DATASET_COUNT, cudaMemcpyDeviceToHost));
+
+  thrust::sort_by_key(h_dataKey, h_dataKey + DATASET_COUNT, h_dataValue);
+
+  gpuErrchk(cudaMemcpy(h_dataKey, h_dataKey, sizeof(int) * DATASET_COUNT,
+                       cudaMemcpyHostToDevice));
+
+  gpuErrchk(cudaMemcpy(h_dataValue, h_dataValue, sizeof(int) * DATASET_COUNT,
+  cudaMemcpyHostToDevice));
+
+
+  thrust::lower_bound(thrust::host, h_dataKey.begin(), h_dataKey.end(), 322);
+  
+
+  
   /**
    **************************************************************************
    * Start the DBSCAN algorithm
@@ -1113,7 +1162,7 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 */
 
 
-__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension) {
+__global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension, int *dataKey, int *dataValue) {
 
   if (threadIdx.x == 0) {
     indexBuckets[0] = indexRoot;
@@ -1127,7 +1176,7 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_COUNT*THREAD_BLOCKS) {
-    insertData(i, dataset, partition, indexRoot, currentIndexes[threadIdx.x]);
+    insertData(i, dataset, partition, indexRoot, currentIndexes[threadIdx.x], dataKey, dataValue);
   }
   __syncthreads();
   
@@ -1145,6 +1194,8 @@ __device__ void indexConstruction(int level, int * indexTreeMetaData, int * part
       int currentBucketIndex =
           indexTreeMetaData[level*RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * partition[level];
+      
+      indexBuckets[k]->id = currentBucketIndex;
 
       indexBuckets[k]->buckets[i] = indexBuckets[currentBucketIndex];
       indexBuckets[k]->level = level;
@@ -1164,7 +1215,7 @@ __device__ void indexConstruction(int level, int * indexTreeMetaData, int * part
 
 }
 
-__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex) {
+__device__ void insertData(int id, double * dataset, int * partition, struct IndexStructure *indexRoot, struct IndexStructure *currentIndex, int *dataKey, int *dataValue) {
 
 
   double data[DIMENSION];
@@ -1185,6 +1236,9 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
       
       if (comparingData >= leftRange && comparingData < rightRange) {
         if (currentIndex->level == DIMENSION - 1) {
+        
+          dataValue[id] =id;
+          dataKey[id] = currentIndex->id;
 
           register int dataCountState = atomicAdd(&(currentIndex->buckets[k]->dataCount), 1);
          
