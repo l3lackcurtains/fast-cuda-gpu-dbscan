@@ -23,7 +23,7 @@ using namespace std;
 #define DATASET_COUNT 10000
 
 // Dimension of the dataset
-#define DIMENSION 3
+#define DIMENSION 2
 
 // Maximum size of seed list
 #define MAX_SEEDS 128
@@ -49,10 +49,10 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION+1)
 
 // Epslion value in DBSCAN
-#define EPS 3
+#define EPS 1.5
 
 // Dont change
-#define PARTITION 100
+#define PARTITION 96
 
 #define POINTS_SEARCHED 10000
 
@@ -1171,24 +1171,22 @@ __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, do
 
 __global__ void INDEXING_ADJUSTMENT(int * indexTreeMetaData, struct IndexStructure **indexBuckets, int *dataKey) {
   
-
   __shared__ int indexingRange;
-
   if(threadIdx.x == 0) {
     indexingRange = indexTreeMetaData[DIMENSION * RANGE + 1] - indexTreeMetaData[DIMENSION * RANGE];
   }
-
   __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
 
   for (int i = threadId; i < indexingRange; i = i + THREAD_COUNT*THREAD_BLOCKS) {
     int idx = indexTreeMetaData[DIMENSION * RANGE] + i;
-    register thrust::pair<int*,int*> dataPositioned;
+    thrust::pair<int*,int*> dataPositioned;
     dataPositioned = thrust::equal_range(thrust::device, dataKey, dataKey + DATASET_COUNT, idx);
     indexBuckets[idx]->dataBegin = dataPositioned.first - dataKey;
     indexBuckets[idx]->dataEnd = dataPositioned.second - dataKey;
   }
+  __syncthreads();
 }
 
 __device__ void indexConstruction(int level, int * indexTreeMetaData, int * partition, double * minPoints, struct IndexStructure **indexBuckets, int * sortedDimension) {
@@ -1204,11 +1202,12 @@ __device__ void indexConstruction(int level, int * indexTreeMetaData, int * part
           indexTreeMetaData[level*RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * partition[level];
       
-      indexBuckets[k]->id = currentBucketIndex;
-
+      
       indexBuckets[k]->buckets[i] = indexBuckets[currentBucketIndex];
+      indexBuckets[k]->buckets[i]->id = currentBucketIndex;
       indexBuckets[k]->level = level;
       indexBuckets[k]->dimension = sortedDimension[level];
+     
 
       double leftPoint = minPoints[level] + i * EPS;
       double rightPoint = leftPoint + EPS;
@@ -1218,6 +1217,7 @@ __device__ void indexConstruction(int level, int * indexTreeMetaData, int * part
 
       indexBuckets[k]->buckets[i]->range[0] = leftPoint;
       indexBuckets[k]->buckets[i]->range[1] = rightPoint;
+      
     }
   }
 
@@ -1245,8 +1245,7 @@ __device__ void insertData(int id, double * dataset, int * partition, struct Ind
         if (currentIndex->level == DIMENSION - 1) {
 
           dataValue[id] = id;
-          dataKey[id] = currentIndex->id;
-
+          dataKey[id] = currentIndex->buckets[k]->id;
           found = true;
           break;
         }
