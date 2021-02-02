@@ -19,8 +19,8 @@
 using namespace std;
 
 // Number of data in dataset to use
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 10000
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 10000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -52,9 +52,9 @@ using namespace std;
 #define EPS 1.5
 
 // Dont change
-#define PARTITION 96
+#define PARTITION 240
 
-#define POINTS_SEARCHED 10000
+#define POINTS_SEARCHED 100000
 
 #define RANGE 2
 
@@ -87,10 +87,10 @@ struct __align__(8) IndexStructure {
   int id;
   int level;
   int dimension;
-  double range[RANGE];
-  struct IndexStructure *buckets[PARTITION];
   int dataBegin;
   int dataEnd;
+  double range[RANGE];
+  struct IndexStructure *buckets[PARTITION];
 };
 
 __global__ void INDEXING_STRUCTURE(double * dataset, int * indexTreeMetaData, double * minPoints, int * partition, int * results, struct IndexStructure *indexRoot, struct IndexStructure **indexBuckets, struct IndexStructure **currentIndexes, int * sortedDimension, int *dataKey, int *dataValue);
