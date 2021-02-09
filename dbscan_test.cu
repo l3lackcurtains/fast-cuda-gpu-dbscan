@@ -19,7 +19,7 @@ using namespace std;
 
 // Number of data in dataset to use
 #define DATASET_COUNT 1864620
-// #define DATASET_COUNT 10000
+// #define DATASET_COUNT 50000000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -407,9 +407,9 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMalloc(
       (void **)&d_currentIndexes,
-      sizeof(struct IndexStructure *) * THREAD_COUNT));
+      sizeof(struct IndexStructure *) * THREAD_COUNT * THREAD_BLOCKS));
 
-  for (int i = 0; i < THREAD_COUNT; i++) {
+  for (int i = 0; i < THREAD_COUNT * THREAD_BLOCKS; i++) {
     gpuErrchk(
         cudaMalloc((void **)&d_currentIndex, sizeof(struct IndexStructure)));
     gpuErrchk(cudaMemcpy(&d_currentIndexes[i], &d_currentIndex,
@@ -1181,7 +1181,7 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   for (int i = threadId; i < DATASET_COUNT;
        i = i + THREAD_COUNT * THREAD_BLOCKS) {
-    insertData(i, dataset, partition, indexBuckets, currentIndexes[threadIdx.x], dataKey,
+    insertData(i, dataset, partition, indexBuckets, currentIndexes[threadId], dataKey,
                dataValue);
   }
   __syncthreads();
