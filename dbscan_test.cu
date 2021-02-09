@@ -25,7 +25,7 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 128
+#define MAX_SEEDS 64
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
@@ -52,7 +52,7 @@ using namespace std;
 
 #define PARTITION 240
 
-#define POINTS_SEARCHED 100000
+#define POINTS_SEARCHED 10000
 
 #define RANGE 2
 
@@ -113,7 +113,7 @@ __device__ void insertData(int id, double *dataset, int *partition,
                            struct IndexStructure *currentIndex, int *dataKey,
                            int *dataValue);
 
-__device__ void searchPoints(int id, int chainID, double *dataset,
+__device__ void searchPoints(double *data, int chainID, double *dataset,
                              int *partition, int *results,
                              struct IndexStructure **indexBuckets,
                              struct IndexStructure *currentIndex,
@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
 
   // Get the total count of dataset
   vector<int> unprocessedPoints;
-  for (int x = DATASET_COUNT - 1; x >= 0; x--) {
+  for (int x = 0; x < DATASET_COUNT; x++) {
     unprocessedPoints.push_back(x);
   }
 
@@ -458,18 +458,16 @@ int main(int argc, char **argv) {
    * Start Indexing first
    **************************************************************************
    */
+  gpuErrchk(cudaDeviceSynchronize());
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
       d_dataset, d_indexTreeMetaData, d_minPoints, d_partition, d_results,
       d_indexBuckets, d_currentIndexes, d_sortedDimension, d_dataKey,
       d_dataValue);
-
   gpuErrchk(cudaDeviceSynchronize());
 
   cudaFree(d_indexTreeMetaData);
   cudaFree(d_minPoints);
-
-  indexingStop = clock();
 
   /**
    **************************************************************************
@@ -479,9 +477,15 @@ int main(int argc, char **argv) {
 
   thrust::sort_by_key(thrust::device, d_dataKey, d_dataKey + DATASET_COUNT,
                       d_dataValue);
+  
+  gpuErrchk(cudaDeviceSynchronize());
 
   INDEXING_ADJUSTMENT<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
       d_indexTreeMetaData, d_indexBuckets, d_dataKey);
+   
+  gpuErrchk(cudaDeviceSynchronize());
+
+  indexingStop = clock();
 
   /**
    **************************************************************************
@@ -506,6 +510,7 @@ int main(int argc, char **argv) {
     int completed = MonitorSeedPoints(
         unprocessedPoints, &runningCluster, d_cluster, d_seedList, d_seedLength,
         d_collisionMatrix, d_extraCollision, d_results);
+    
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //        unprocessedPoints.size());
 
@@ -1009,7 +1014,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
    */
 
   if (threadIdx.x == 0) {
-    searchPoints(pointID, chainID, dataset, partition, results, indexBuckets,
+    searchPoints(point, chainID, dataset, partition, results, indexBuckets,
                  currentIndexes[chainID], indexesStack, dataValue);
   }
   __syncthreads();
@@ -1218,8 +1223,6 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   int *partition, double *minPoints,
                                   struct IndexStructure **indexBuckets,
                                   int *sortedDimension) {
-  if (level > DIMENSION) return;
-
   for (int k = blockIdx.x + indexTreeMetaData[level * RANGE + 0];
        k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_BLOCKS) {
     for (int i = threadIdx.x; i < partition[level]; i = i + THREAD_COUNT) {
@@ -1278,17 +1281,12 @@ __device__ void insertData(int id, double *dataset, int *partition,
   }
 }
 
-__device__ void searchPoints(int id, int chainID, double *dataset,
+__device__ void searchPoints(double *data, int chainID, double *dataset,
                              int *partition, int *results,
                              struct IndexStructure **indexBuckets,
                              struct IndexStructure *currentIndex,
                              struct IndexStructure **indexesStack,
                              int *dataValue) {
-  double data[DIMENSION];
-  for (int i = 0; i < DIMENSION; i++) {
-    data[i] = dataset[id * DIMENSION + i];
-  }
-
   int indexBucketSize = 1;
   for (int i = 0; i < DIMENSION; i++) {
     indexBucketSize *= 3;
