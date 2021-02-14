@@ -407,7 +407,7 @@ int main(int argc, char **argv) {
     indexBucketSize *= 3;
   }
 
-  indexBucketSize = indexBucketSize * THREAD_BLOCKS * THREAD_COUNT;
+  indexBucketSize = indexBucketSize * THREAD_BLOCKS;
 
   int *d_indexesStack;
 
@@ -1267,15 +1267,14 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
     matchedIndexCount = 0;
     resultsCount = 0;
 
-    int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-
     indexBucketSize = 1;
     for (int i = 0; i < DIMENSION; i++) {
       indexBucketSize *= 3;
     }
-    indexBucketSize = indexBucketSize * threadId;
+    indexBucketSize = indexBucketSize * chainID;
     currentIndexSize = indexBucketSize;
     indexesStack[currentIndexSize++] = 0;
+    
 
     while (currentIndexSize > indexBucketSize) {
       currentIndex = indexesStack[--currentIndexSize];
@@ -1327,7 +1326,7 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
       }
     }
 
-    if (matchedIndex[x] < partition[indexBuckets[currentIndex]->level] - 1) {
+    if (matchedIndex[x] < partition[indexBuckets[matchedIndex[x]]->level] - 1) {
       for (int i = threadIdx.x + indexBuckets[matchedIndex[x] + 1]->dataBegin;
            i < indexBuckets[matchedIndex[x] + 1]->dataEnd;
            i = i + THREAD_COUNT) {
