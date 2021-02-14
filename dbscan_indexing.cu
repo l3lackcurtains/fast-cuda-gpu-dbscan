@@ -79,6 +79,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
+
 struct __align__(8) IndexStructure {
   int level;
   int dimension;
@@ -953,7 +954,6 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
    * Keep record of left over neighbors in neighborBuffer
    **************************************************************************
    */
-
    if(threadIdx.x == 0) {
      searchPoints(pointID, chainID, dataset, partition, results, indexRoot, currentIndexes[chainID], indexesStack);
    }
