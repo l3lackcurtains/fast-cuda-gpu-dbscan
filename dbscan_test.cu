@@ -1262,6 +1262,7 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
   __shared__ int indexBucketSize;
   __shared__ int currentIndex;
   __shared__ int currentIndexSize;
+  __shared__ int stopTraverse;
 
   if (threadIdx.x == 0) {
     matchedIndexCount = 0;
@@ -1274,12 +1275,22 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
     indexBucketSize = indexBucketSize * chainID;
     currentIndexSize = indexBucketSize;
     indexesStack[currentIndexSize++] = 0;
-    
+    stopTraverse = 0;
+  }
+  __syncthreads();
 
     while (currentIndexSize > indexBucketSize) {
-      currentIndex = indexesStack[--currentIndexSize];
+      if (threadIdx.x == 0) {
+        int oldCurrentIndexSize = atomicSub(&currentIndexSize, 1);
+        currentIndex = indexesStack[oldCurrentIndexSize - 1];
+        stopTraverse = 0;
+      }
+      __syncthreads();
 
-      for (int k = 0; k < partition[indexBuckets[currentIndex]->level]; k++) {
+      for (int k = threadIdx.x; k < partition[indexBuckets[currentIndex]->level]; k = k + THREAD_COUNT) {
+
+        if(stopTraverse == 1) break;
+
         double comparingData = data[indexBuckets[currentIndex]->dimension];
         double leftRange =
             indexBuckets[indexBuckets[currentIndex]->childBuckets[k]]->range[0];
@@ -1288,27 +1299,33 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
 
         if (comparingData >= leftRange && comparingData < rightRange) {
           if (indexBuckets[currentIndex]->level == DIMENSION - 1) {
-            matchedIndex[matchedIndexCount++] =
+            int oldMatchedIndexCount = atomicAdd(&matchedIndexCount, 1);
+            matchedIndex[oldMatchedIndexCount] =
                 indexBuckets[currentIndex]->childBuckets[k];
+            atomicCAS(&stopTraverse, 0, 1);
             break;
           }
 
-          indexesStack[currentIndexSize++] =
+          int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
+          indexesStack[oldCurrentIndexSize] =
               indexBuckets[currentIndex]->childBuckets[k];
           if (k > 0) {
-            indexesStack[currentIndexSize++] =
+            int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
+            indexesStack[oldCurrentIndexSize] =
                 indexBuckets[currentIndex]->childBuckets[k - 1];
           }
           if (k < partition[indexBuckets[currentIndex]->level] - 1) {
-            indexesStack[currentIndexSize++] =
+            int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
+            indexesStack[oldCurrentIndexSize] =
                 indexBuckets[currentIndex]->childBuckets[k + 1];
           }
-          break;
+          atomicCAS(&stopTraverse, 0, 1);
         }
       }
+
+      __syncthreads();
     }
-  }
-  __syncthreads();
+
 
   for (int x = 0; x < matchedIndexCount; x++) {
     for (int i = threadIdx.x + indexBuckets[matchedIndex[x]]->dataBegin;
