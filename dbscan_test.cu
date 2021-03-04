@@ -19,22 +19,22 @@ using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 10000
+#define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 64
+#define MAX_SEEDS 128
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 256
+#define THREAD_BLOCKS 1024
 
 // Number of threads per block
-#define THREAD_COUNT 512
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -50,11 +50,14 @@ using namespace std;
 // Epslion value in DBSCAN
 #define EPS 1.5
 
-#define POINTS_SEARCHED 20000
-
 #define RANGE 2
 
-#define PARTITION_SIZE 50
+#define POINTS_SEARCHED 20000
+
+#define PARTITION_SIZE  50
+
+// PATH=$PATH:$HOME/.local/bin:$HOME/bin:/usr/local/cuda-10.1/bin
+
 
 /**
 **************************************************************************
@@ -315,6 +318,11 @@ int main(int argc, char **argv) {
     printf("#%d Bin Width: %lf\n", x, binWidth[x]);
   }
   printf("Min Bin Size: %lf\n", minBinSize);
+
+  if(minBinSize < EPS) {
+    printf("Bin width (%f) is less than EPS(%f).", minBinSize, EPS);
+    exit(0);
+  }
 
   // Level Partition
   int treeLevelPartition[TREE_LEVELS] = {1};
