@@ -734,6 +734,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
         localCluster[x] = *runningCluster + THREAD_BLOCKS;
       }
     }
+    localExtraCollision[i * EXTRA_COLLISION_SIZE] = *runningCluster + THREAD_BLOCKS;
     (*runningCluster)++;
   }
 
@@ -751,7 +752,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
           break;
         if (localCluster[x] == localExtraCollision[i * EXTRA_COLLISION_SIZE + j])
         {
-          localCluster[x] = localExtraCollision[i * EXTRA_COLLISION_SIZE];
+          localCluster[x] = localExtraCollision[clusterMap[i] * EXTRA_COLLISION_SIZE];
         }
       }
     }
