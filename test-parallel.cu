@@ -34,14 +34,14 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix);
 
 int main() {
   int collisionMatrix[THREAD_BLOCKS][THREAD_BLOCKS] = {
-      {1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0},
+      {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
       {0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0},
-      {0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0},
-      {0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0},
-      {1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0},
-      {0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0},
-      {0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0},
-      {0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0}};
+      {0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0},
+      {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0},
+      {1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0}};
 
   int colMap[THREAD_BLOCKS];
   std::set<int> blockSet;
@@ -99,48 +99,86 @@ int main() {
 }
 
 __global__ void COLLISION_DETECTION(int *collisionMatrix) {
-  if (blockIdx.x == 0 && threadIdx.x == 0) {
-    int colMap[THREAD_BLOCKS];
-    int blockSet[THREAD_BLOCKS];
-    for (int i = 0; i < THREAD_BLOCKS; i++) {
-      colMap[i] = i;
-      blockSet[i] = i;
+  if (blockIdx.x == 0) {
+    __shared__ int colMap[THREAD_BLOCKS];
+    __shared__ int blockSet[THREAD_BLOCKS];
+    __shared__ int blocksetCount;
+
+    if (threadIdx.x == 0) {
+      for (int i = 0; i < THREAD_BLOCKS; i++) {
+        colMap[i] = i;
+        blockSet[i] = i;
+      }
+      blocksetCount = THREAD_BLOCKS;
     }
-    int blocksetCount = THREAD_BLOCKS;
+    __syncthreads();
+
+    __shared__ int curBlock;
+    __shared__ int expansionQueue[THREAD_BLOCKS];
+    __shared__ int finalQueue[THREAD_BLOCKS];
+    __shared__ int expansionQueueCount;
+    __shared__ int finalQueueCount;
+    __shared__ int expandBlock;
+
     while (blocksetCount > 0) {
-      int curBlock = blockSet[0];
-      int expansionQueue[THREAD_BLOCKS * THREAD_BLOCKS];
-      int finalQueue[THREAD_BLOCKS * THREAD_BLOCKS];
-      int expansionQueueCount = 0;
-      int finalQueueCount = 0;
-      expansionQueue[expansionQueueCount++] = curBlock;
-      finalQueue[finalQueueCount++] = curBlock;
+      if (threadIdx.x == 0) {
+        curBlock = blockSet[0];
+        expansionQueueCount = 0;
+        finalQueueCount = 0;
+        expansionQueue[expansionQueueCount++] = curBlock;
+        finalQueue[finalQueueCount++] = curBlock;
+      }
+      __syncthreads();
+
       while (expansionQueueCount > 0) {
-        int expandBlock = expansionQueue[--expansionQueueCount];
+        if (threadIdx.x == 0) {
+          int oldExpansionQueueCount = atomicSub(&expansionQueueCount, 1);
+          expandBlock = expansionQueue[oldExpansionQueueCount - 1];
+        }
+        __syncthreads();
+
         thrust::remove(thrust::device, expansionQueue,
                        expansionQueue + THREAD_BLOCKS, expandBlock);
         thrust::remove(thrust::device, blockSet, blockSet + THREAD_BLOCKS,
                        expandBlock);
-        blocksetCount--;
-        for (int x = 0; x < THREAD_BLOCKS; x++) {
+
+        if (threadIdx.x == 0) {
+          atomicSub(&blocksetCount, 1);
+        }
+        __syncthreads();
+
+        for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
           if (x == expandBlock) continue;
           if ((collisionMatrix[expandBlock * THREAD_BLOCKS + x] == 1 ||
                collisionMatrix[x * THREAD_BLOCKS + expandBlock]) &&
               thrust::find(thrust::device, blockSet, blockSet + THREAD_BLOCKS,
                            x) != blockSet + THREAD_BLOCKS) {
-            expansionQueue[expansionQueueCount++] = x;
-            finalQueue[finalQueueCount++] = x;
+            if (thrust::find(thrust::device, expansionQueue,
+                             expansionQueue + THREAD_BLOCKS,
+                             x) == expansionQueue + THREAD_BLOCKS) {
+              int oldExpansionQueueCount = atomicAdd(&expansionQueueCount, 1);
+              expansionQueue[oldExpansionQueueCount] = x;
+            }
+
+            if (thrust::find(thrust::device, finalQueue,
+                             finalQueue + THREAD_BLOCKS,
+                             x) == finalQueue + THREAD_BLOCKS) {
+              int oldFinalQueueCount = atomicAdd(&finalQueueCount, 1);
+              finalQueue[oldFinalQueueCount] = x;
+            }
           }
         }
       };
 
-      for (int c = 0; c < finalQueueCount; c++) {
+      for (int c = threadIdx.x; c < finalQueueCount; c = c + THREAD_COUNT) {
         colMap[finalQueue[c]] = curBlock;
       }
+      __syncthreads();
     };
-
-    for (int i = 0; i < THREAD_BLOCKS; i++) {
-      printf("%d -> %d\n", i, colMap[i]);
+    if (threadIdx.x == 0) {
+      for (int i = 0; i < THREAD_BLOCKS; i++) {
+        printf("%d -> %d\n", i, colMap[i]);
+      }
     }
   }
 }
