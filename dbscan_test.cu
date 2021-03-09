@@ -19,8 +19,8 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 1864620
-// #define DATASET_COUNT 100000
+// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 50000000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -32,10 +32,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 256
+#define THREAD_BLOCKS 3200
 
 // Number of threads per block
-#define THREAD_COUNT 128
+#define THREAD_COUNT 1024
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -49,13 +49,13 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION + 1)
 
 // Epslion value in DBSCAN
-#define EPS 0.6
+#define EPS 0.1
 
 #define RANGE 2
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 120
+#define PARTITION_SIZE 500
 
 /**
 **************************************************************************
@@ -1110,13 +1110,14 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    int *results,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue) {
-  for (int i = 0; i < DIMENSION; i++) {
-    indexConstruction(i, indexTreeMetaData, minPoints, binWidth, indexBuckets);
+  if(blockIdx.x < DIMENSION) {
+    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth, indexBuckets);
   }
   __syncthreads();
 
-  for (int i = blockIdx.x; i < DATASET_COUNT;
-       i = i + THREAD_BLOCKS) {
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = threadId; i < DATASET_COUNT;
+       i = i + THREAD_COUNT * THREAD_BLOCKS) {
     insertData(i, dataset, indexBuckets, dataKey, dataValue);
   }
   __syncthreads();
@@ -1154,11 +1155,11 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   struct IndexStructure **indexBuckets) {
   
   
-  for (int k = blockIdx.x + indexTreeMetaData[level * RANGE + 0];
-       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_BLOCKS) {
-    
-    
-    for (int i = threadIdx.x; i < PARTITION_SIZE; i = i + THREAD_COUNT) {
+  for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
+       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
+
+    for (int i = 0; i < PARTITION_SIZE; i++) {
+      
       int currentBucketIndex =
           indexTreeMetaData[level * RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
@@ -1177,38 +1178,27 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
 
       indexBuckets[currentBucketIndex]->range[0] = leftPoint;
       indexBuckets[currentBucketIndex]->range[1] = rightPoint;
+
     }
   }
+  __syncthreads();
 }
 
 __device__ void insertData(int id, double *dataset,
                            struct IndexStructure **indexBuckets, int *dataKey,
                            int *dataValue) {
-  __shared__ double data[DIMENSION];
-  __shared__ int currentIndex;
-  __shared__ int found;
-  __shared__ int stopTraverse;
-  __shared__ double comparingData;
-
-  if(threadIdx.x == 0) {
-      for (int j = 0; j < DIMENSION; j++) {
-      data[j] = dataset[id * DIMENSION + j];
-    }
-    currentIndex = 0;
-    found = 0;
-    
+  double data[DIMENSION];
+  for (int j = 0; j < DIMENSION; j++) {
+    data[j] = dataset[id * DIMENSION + j];
   }
-  __syncthreads();
-  
 
-  while (found == 0) {
-    if(threadIdx.x == 0) {
-      stopTraverse = 0;
-      comparingData = data[indexBuckets[currentIndex]->dimension];
-    }
-    __syncthreads();
-    for (int k = threadIdx.x; k < PARTITION_SIZE; k = k + THREAD_COUNT) {
-      if(stopTraverse == 1) break;
+  int currentIndex = 0;
+  bool found = false;
+
+  while (!found) {
+    if(indexBuckets[currentIndex]->dimension >= DIMENSION) break;
+    for (int k = 0; k < PARTITION_SIZE; k++) {
+      double comparingData = data[indexBuckets[currentIndex]->dimension];
       double leftRange =
           indexBuckets[indexBuckets[currentIndex]->childBuckets[k]]->range[0];
       double rightRange =
@@ -1218,20 +1208,14 @@ __device__ void insertData(int id, double *dataset,
         if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
           dataValue[id] = id;
           dataKey[id] = indexBuckets[currentIndex]->childBuckets[k];
-          found = 1;
-          stopTraverse = 1;
+          found = true;
           break;
         }
         currentIndex = indexBuckets[currentIndex]->childBuckets[k];
-        stopTraverse = 1;
         break;
       }
-      __syncthreads();
     }
-    __syncthreads();
-    
   }
-  
 }
 
 __device__ void searchPoints(double *data, int chainID, double *dataset,
