@@ -781,10 +781,7 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &coll
 **************************************************************************
 */
 
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyDeviceToHost));
+  
 
   double *dataset;
   dataset = (double *)malloc(sizeof(double) * DATASET_COUNT * DIMENSION);
@@ -813,22 +810,25 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &coll
   }
 
 
-  ////////////////////////////////////////////////////////////
+ 
 
   for(int x = 0; x < (*runningCluster); x++) {
     if(collisionUnion[x].empty()) continue;
     set<int>:: iterator it;
-    
     for( it = collisionUnion[x].begin(); it!=collisionUnion[x].end(); ++it) {
       int y = *it;
       if(y == x) continue;
-      for (int i = 0; i < DATASET_COUNT; i++) {
-        if(localCluster[i] == y) {
-          localCluster[i] = x;
-        }
-      }
+      thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT, y, x);
     }
   }
+
+
+   ////////////////////////////////////////////////////////////
+
+  int *localCluster;
+  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
+  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
+                       cudaMemcpyDeviceToHost));
 
   map<int, int> finalClusterMap;
   int localClusterCount = 0;
