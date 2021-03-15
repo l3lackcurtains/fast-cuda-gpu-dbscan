@@ -20,22 +20,22 @@ using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 50000000
+#define DATASET_COUNT 10000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 256
+#define MAX_SEEDS 128
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 3200
+#define THREAD_BLOCKS 16
 
 // Number of threads per block
-#define THREAD_COUNT 1024
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -49,13 +49,13 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION + 1)
 
 // Epslion value in DBSCAN
-#define EPS 0.1
+#define EPS 1.5
 
 #define RANGE 2
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 500
+#define PARTITION_SIZE 60
 
 /**
 **************************************************************************
@@ -130,7 +130,7 @@ int compareDouble(const void *a, const void *b) {
 */
 int ImportDataset(char const *fname, double *dataset);
 
-bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
+bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisionUnion, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results);
@@ -155,6 +155,15 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
+
+int findMin(set<int> my_set) { 
+
+    int min_element; 
+    if (!my_set.empty()) 
+        min_element = *my_set.begin(); 
+    return min_element; 
+} 
+
 int main(int argc, char **argv) {
   char inputFname[500];
   if (argc != 2) {
@@ -455,7 +464,9 @@ int main(int argc, char **argv) {
  */
 
   // Keep track of number of cluster formed without global merge
-  int runningCluster = 0;
+  int runningCluster = THREAD_BLOCKS;
+
+  vector<set<int>> collisionUnion; 
 
   // Global cluster count
   int clusterCount = 0;
@@ -469,7 +480,7 @@ int main(int argc, char **argv) {
   while (!exit) {
     // Monitor the seed list and return the comptetion status of points
     int completed = MonitorSeedPoints(
-        unprocessedPoints, &runningCluster, d_cluster, d_seedList, d_seedLength,
+        unprocessedPoints, collisionUnion, &runningCluster, d_cluster, d_seedList, d_seedLength,
         d_collisionMatrix, d_extraCollision, d_results);
 
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
@@ -551,7 +562,7 @@ int main(int argc, char **argv) {
 **************************************************************************
 */
 
-bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
+bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisionUnion, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results) {
@@ -602,6 +613,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
  * between chains and finalize the clusters
  **************************************************************************
  */
+ printf("XXXXXXXXXXX");
 
   // Define cluster to map the collisions
   map<int, int> clusterMap;
@@ -663,62 +675,43 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
     }
   }
 
-  // Loop through dataset and get points for mapped chain
-  vector<vector<int>> clustersList(THREAD_BLOCKS, vector<int>());
+  
+
   for (int i = 0; i < DATASET_COUNT; i++) {
     if (localCluster[i] >= 0 && localCluster[i] < THREAD_BLOCKS) {
-      clustersList[clusterMap[localCluster[i]]].push_back(i);
+      localCluster[i] = clusterMap[localCluster[i]] + (*runningCluster);
     }
   }
 
-  // Check extra collision with cluster ID greater than thread block
-  vector<vector<int>> localClusterMerge(THREAD_BLOCKS, vector<int>());
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    for (int j = 0; j < EXTRA_COLLISION_SIZE; j++) {
-      if (localExtraCollision[i * EXTRA_COLLISION_SIZE + j] == UNPROCESSED)
-        break;
-      bool found = find(localClusterMerge[clusterMap[i]].begin(),
-                        localClusterMerge[clusterMap[i]].end(),
-                        localExtraCollision[i * EXTRA_COLLISION_SIZE + j]) !=
-                   localClusterMerge[clusterMap[i]].end();
 
-      if (!found &&
-          localExtraCollision[i * EXTRA_COLLISION_SIZE + j] >= THREAD_BLOCKS) {
-        localClusterMerge[clusterMap[i]].push_back(
-            localExtraCollision[i * EXTRA_COLLISION_SIZE + j]);
-      }
+  // collisionUnion
+  vector<set<int>> tempExtraCollision;
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    for(int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
+      if(localExtraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
+      tempExtraCollision[x].insert(localExtraCollision[x * EXTRA_COLLISION_SIZE + y]);
     }
   }
 
-  // Check extra collision with cluster ID greater than thread block
-  for (int i = 0; i < localClusterMerge.size(); i++) {
-    if (localClusterMerge[i].empty()) continue;
-    for (int j = 0; j < localClusterMerge[i].size(); j++) {
-      for (int k = 0; k < DATASET_COUNT; k++) {
-        if (localCluster[k] == localClusterMerge[i][j]) {
-          localCluster[k] = localClusterMerge[clusterMap[i]][0];
-        }
-      }
-    }
+  
 
-    // Also, Assign the mapped chains to the first cluster in extra collision
-    for (int x = 0; x < clustersList[clusterMap[i]].size(); x++) {
-      localCluster[clustersList[clusterMap[i]][x]] =
-          localClusterMerge[clusterMap[i]][0];
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    if(tempExtraCollision[x].empty()) continue;
+    int minCluster = findMin(tempExtraCollision[x]);
+    collisionUnion[minCluster].insert(*runningCluster + clusterMap[x]);
+    for (auto data : tempExtraCollision[x]) {
+      collisionUnion[minCluster].insert(data);
     }
-
-    // Clear the mapped chains, as we assigned to clsuter already
-    clustersList[clusterMap[i]].clear();
   }
 
-  // From all the mapped chains, form a new cluster
-  for (int i = 0; i < clustersList.size(); i++) {
-    if (clustersList[i].size() == 0) continue;
-    for (int x = 0; x < clustersList[i].size(); x++) {
-      localCluster[clustersList[i][x]] = *runningCluster + THREAD_BLOCKS;
-    }
-    (*runningCluster)++;
+
+
+  int maxBlock = -1;
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    if(clusterMap[x] > maxBlock ) maxBlock = x;
   }
+  *runningCluster  = *runningCluster + maxBlock + 1;
+
 
   /**
  **************************************************************************
@@ -900,24 +893,21 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   for(int x = threadId; x < THREAD_BLOCKS*THREAD_BLOCKS; x = x + THREAD_BLOCKS*THREAD_COUNT) {
     collisionMatrix[x] = UNPROCESSED;
   }
-  __syncthreads();
   for(int x = threadId; x < THREAD_BLOCKS*EXTRA_COLLISION_SIZE; x = x + THREAD_BLOCKS*THREAD_COUNT) {
     extraCollision[x] = UNPROCESSED;
   }
-  __syncthreads();
-  for(int x = threadId; x < THREAD_BLOCKS*POINTS_SEARCHED; x = x + THREAD_BLOCKS*THREAD_COUNT) {
-    results[x] = UNPROCESSED;
-  }
+
   __syncthreads();
 
   // Complete the seedlist to proceed.
 
   while (seedLength[chainID] != 0) {
-    /**
-**************************************************************************
-* Get current chain length, and If its zero, exit
-**************************************************************************
-*/
+
+
+      for(int x = threadId; x < THREAD_BLOCKS*POINTS_SEARCHED; x = x + THREAD_BLOCKS*THREAD_COUNT) {
+        results[x] = UNPROCESSED;
+      }
+      __syncthreads();
 
     // Assign chainID, current seed length and pointID
     if (threadIdx.x == 0) {
@@ -949,11 +939,16 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                  dataValue);
 
     __syncthreads();
+
     for (int k = 0; k < POINTS_SEARCHED; k++) {
+
+
       if (threadIdx.x == 0) {
         resultId = results[chainID * POINTS_SEARCHED + k];
       }
       __syncthreads();
+
+
       if (resultId == -1) break;
 
       for (int i = threadIdx.x + indexBuckets[resultId]->dataBegin;
