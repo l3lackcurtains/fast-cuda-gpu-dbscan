@@ -20,7 +20,7 @@ using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 50000000
+#define DATASET_COUNT 10000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -32,10 +32,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 2048
+#define THREAD_BLOCKS 512
 
 // Number of threads per block
-#define THREAD_COUNT 1024
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -49,11 +49,11 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION + 1)
 
 // Epslion value in DBSCAN
-#define EPS 0.01
+#define EPS 1.5
 
 #define RANGE 2
 
-#define PARTITION_SIZE 1000
+#define PARTITION_SIZE 50
 
 #define POINTS_SEARCHED 9
 
@@ -1191,10 +1191,6 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
                                  int *runningCluster) {
     
-  
-  
-    
-
     if (threadIdx.x == 0 && blockIdx.x == 0) {
       for (int i = 0; i < THREAD_BLOCKS; i++) {
         clusterMap[i] = i;
@@ -1204,8 +1200,6 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
     }
     __syncthreads();
 
-    
-    
     while (blocksetCount > 0) {
       if (threadIdx.x == 0) {
         curBlock = blockSet[0];
@@ -1267,61 +1261,40 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
           clusterMap[finalQueue[c]] = curBlock;
         }
       }
-
       __syncthreads();
     };
+    __syncthreads();
 
-    
-    if(blockIdx.x == 0) {
-      for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
-        if (cluster[i] >= 0 && cluster[i] < THREAD_BLOCKS) {
-          if (extraCollision[cluster[i] * EXTRA_COLLISION_SIZE] ==
-              UNPROCESSED) {
-            cluster[i] = clusterMap[cluster[i]];
-          } else {
-            cluster[i] = extraCollision[clusterMap[cluster[i]] *
-                                                  EXTRA_COLLISION_SIZE];
-          }
-        }
-        __syncthreads();
-      }
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_BLOCKS * THREAD_COUNT) {
+    if (cluster[i] >= 0 && cluster[i] < THREAD_BLOCKS) {
+      cluster[i] = clusterMap[cluster[i]] + runningCluster[0];
+    }
   }
   __syncthreads();
-    
-    for (int i = blockIdx.x; i < THREAD_BLOCKS; i = i + THREAD_BLOCKS) {
-      if (extraCollision[i * EXTRA_COLLISION_SIZE] != UNPROCESSED) continue;
-      for (int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
-        if (cluster[x] == i) {
-          cluster[x] = runningCluster[0] + THREAD_BLOCKS;
-        }
-      }
-      __syncthreads();
-      if(threadIdx.x == 0) {
-        atomicCAS(&extraCollision[i * EXTRA_COLLISION_SIZE], UNPROCESSED, runningCluster[0] + THREAD_BLOCKS);
-        atomicAdd(&runningCluster[0], 1);
-      }
-      
+
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    if(extraCollision[x * EXTRA_COLLISION_SIZE] == -1) continue;
+    int minCluster = extraCollision[x * EXTRA_COLLISION_SIZE];
+    thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, (runningCluster[0] + clusterMap[x]), minCluster);
+    __syncthreads();
+    for(int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
+      if(extraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
+      int data = extraCollision[x * EXTRA_COLLISION_SIZE + y];
+      thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, data, minCluster);
       __syncthreads();
     }
-    
-    for (int i = blockIdx.x; i < THREAD_BLOCKS; i = i + THREAD_BLOCKS) {
-      if (extraCollision[i * EXTRA_COLLISION_SIZE] == UNPROCESSED) continue;
-      for (int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
-        for (int j = 0; j < EXTRA_COLLISION_SIZE; j++) {
-          if (extraCollision[i * EXTRA_COLLISION_SIZE + j] == UNPROCESSED)
-            break;
-          if (cluster[x] ==
-              extraCollision[i * EXTRA_COLLISION_SIZE + j]) {
-            cluster[x] =
-                extraCollision[clusterMap[i] * EXTRA_COLLISION_SIZE];
-          }
-          __syncthreads();
-        }
-        __syncthreads();
-      }
-      __syncthreads();
+  }
+  __syncthreads();
+
+  if(blockIdx.x == 0 && threadIdx.x == 0) {
+    int maxBlock = -1;
+    for(int x = 0; x < THREAD_BLOCKS; x++) {
+      if(clusterMap[x] > maxBlock ) maxBlock = x;
     }
-  
+    atomicCAS(&runningCluster[0], runningCluster[0], runningCluster[0] + maxBlock + 1);
+  }
+
   if(blockIdx.x == 0) {
     for(int x = threadIdx.x; x < THREAD_BLOCKS*EXTRA_COLLISION_SIZE; x = x + THREAD_COUNT) {
       extraCollision[x] = UNPROCESSED;

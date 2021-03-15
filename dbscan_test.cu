@@ -19,8 +19,8 @@
 using namespace std;
 
 // Number of data in dataset to use
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 100000
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -32,10 +32,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 16
+#define THREAD_BLOCKS 256
 
 // Number of threads per block
-#define THREAD_COUNT 256
+#define THREAD_COUNT 512
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -55,7 +55,7 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 60
+#define PARTITION_SIZE 100
 
 /**
 **************************************************************************
