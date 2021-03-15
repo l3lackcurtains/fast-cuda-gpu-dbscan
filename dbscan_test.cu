@@ -20,7 +20,7 @@ using namespace std;
 
 // Number of data in dataset to use
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 10000
+#define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
@@ -64,6 +64,15 @@ using namespace std;
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
+
+int findMin(set<int> my_set) { 
+
+  int min_element; 
+  if (!my_set.empty()) 
+      min_element = *my_set.begin(); 
+  return min_element; 
+} 
+
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line,
@@ -130,12 +139,12 @@ int compareDouble(const void *a, const void *b) {
 */
 int ImportDataset(char const *fname, double *dataset);
 
-bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisionUnion, int *runningCluster,
+bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &collisionUnion, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results);
 
-void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
+void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &collisionUnion, int *runningCluster,
                      int *clusterCount, int *noiseCount);
 
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
@@ -155,15 +164,6 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
-
-int findMin(set<int> my_set) { 
-
-    int min_element; 
-    if (!my_set.empty()) 
-        min_element = *my_set.begin(); 
-    return min_element; 
-} 
-
 int main(int argc, char **argv) {
   char inputFname[500];
   if (argc != 2) {
@@ -465,8 +465,7 @@ int main(int argc, char **argv) {
 
   // Keep track of number of cluster formed without global merge
   int runningCluster = THREAD_BLOCKS;
-
-  vector<set<int>> collisionUnion; 
+  map<int, set<int>> collisionUnion;
 
   // Global cluster count
   int clusterCount = 0;
@@ -509,7 +508,7 @@ int main(int argc, char **argv) {
  */
 
   // Get the DBSCAN result
-  GetDbscanResult(d_dataset, d_cluster, &runningCluster, &clusterCount,
+  GetDbscanResult(d_dataset, d_cluster, collisionUnion, &runningCluster, &clusterCount,
                   &noiseCount);
 
   totalTimeStop = clock();
@@ -562,7 +561,7 @@ int main(int argc, char **argv) {
 **************************************************************************
 */
 
-bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisionUnion, int *runningCluster,
+bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &collisionUnion, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results) {
@@ -613,7 +612,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisi
  * between chains and finalize the clusters
  **************************************************************************
  */
- printf("XXXXXXXXXXX");
 
   // Define cluster to map the collisions
   map<int, int> clusterMap;
@@ -675,25 +673,20 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisi
     }
   }
 
-  
-
   for (int i = 0; i < DATASET_COUNT; i++) {
     if (localCluster[i] >= 0 && localCluster[i] < THREAD_BLOCKS) {
       localCluster[i] = clusterMap[localCluster[i]] + (*runningCluster);
     }
   }
 
-
   // collisionUnion
-  vector<set<int>> tempExtraCollision;
+  map<int, set<int>> tempExtraCollision;
   for(int x = 0; x < THREAD_BLOCKS; x++) {
     for(int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
       if(localExtraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
       tempExtraCollision[x].insert(localExtraCollision[x * EXTRA_COLLISION_SIZE + y]);
     }
   }
-
-  
 
   for(int x = 0; x < THREAD_BLOCKS; x++) {
     if(tempExtraCollision[x].empty()) continue;
@@ -704,14 +697,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisi
     }
   }
 
-
-
   int maxBlock = -1;
   for(int x = 0; x < THREAD_BLOCKS; x++) {
     if(clusterMap[x] > maxBlock ) maxBlock = x;
   }
   *runningCluster  = *runningCluster + maxBlock + 1;
-
 
   /**
  **************************************************************************
@@ -783,7 +773,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, vector<set<int>> &collisi
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
-void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
+void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &collisionUnion, int *runningCluster,
                      int *clusterCount, int *noiseCount) {
   /**
 **************************************************************************
@@ -801,6 +791,44 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
   gpuErrchk(cudaMemcpy(dataset, d_dataset,
                        sizeof(double) * DATASET_COUNT * DIMENSION,
                        cudaMemcpyDeviceToHost));
+
+
+
+  ////////////////////////////////////////////////////////////
+  for(int x = 0; x < (*runningCluster); x++) {
+    if(collisionUnion[x].empty()) continue;
+
+    set<int>:: iterator it;
+    
+    for( it = collisionUnion[x].begin(); it!=collisionUnion[x].end(); ++it){
+        int y = *it;
+        if(collisionUnion[y].empty() || x == y) continue;
+        set<int>:: iterator it2;
+        for( it2 = collisionUnion[y].begin(); it2!=collisionUnion[y].end(); ++it2){
+          int anxx = *it2;
+          collisionUnion[x].insert(anxx);
+        }
+        collisionUnion[y].clear();
+    }
+  }
+
+
+  ////////////////////////////////////////////////////////////
+
+  for(int x = 0; x < (*runningCluster); x++) {
+    if(collisionUnion[x].empty()) continue;
+    set<int>:: iterator it;
+    
+    for( it = collisionUnion[x].begin(); it!=collisionUnion[x].end(); ++it) {
+      int y = *it;
+      if(y == x) continue;
+      for (int i = 0; i < DATASET_COUNT; i++) {
+        if(localCluster[i] == y) {
+          localCluster[i] = x;
+        }
+      }
+    }
+  }
 
   map<int, int> finalClusterMap;
   int localClusterCount = 0;
