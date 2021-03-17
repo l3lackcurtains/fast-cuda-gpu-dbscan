@@ -1,0 +1,56 @@
+Using dataset file /home/mpoudel/datasets/2d50.txt
+Sample Data 103.447529
+Sample Data 56.022025
+Preprocessed 50000000 data in dataset
+Level 0 Max: 337.483238
+Level 0 Min: 28.137694
+Level 1 Max: 89.990053
+Level 1 Min: 0.003984
+#0 Bin Width: 0.257788
+#1 Bin Width: 0.074988
+Min Bin Size: 0.074988
+#0 Partition: 1 Range: 0 1
+#1 Partition: 1200 Range: 1 1201
+#2 Partition: 1200 Range: 1201 1441201
+Index Structure Size: 6.485622 GB.
+Index structure created.
+GPUassert: an illegal memory access was encountered ./dbscan_test2.cu 493
+Using dataset file /home/mpoudel/datasets/2d50.txt
+Sample Data 103.447529
+Sample Data 56.022025
+Preprocessed 50000000 data in dataset
+Level 0 Max: 337.483238
+Level 0 Min: 28.137694
+Level 1 Max: 89.990053
+Level 1 Min: 0.003984
+#0 Bin Width: 0.257788
+#1 Bin Width: 0.074988
+Min Bin Size: 0.074988
+#0 Partition: 1 Range: 0 1
+#1 Partition: 1200 Range: 1 1201
+#2 Partition: 1200 Range: 1201 1441201
+Index Structure Size: 6.485622 GB.
+Index structure created.
+Using dataset file /home/mpoudel/datasets/2d50.txt
+Sample Data 103.447529
+Sample Data 56.022025
+Preprocessed 50000000 data in dataset
+Level 0 Max: 337.483238
+Level 0 Min: 28.137694
+Level 1 Max: 89.990053
+Level 1 Min: 0.003984
+#0 Bin Width: 0.257788
+#1 Bin Width: 0.074988
+Min Bin Size: 0.074988
+#0 Partition: 1 Range: 0 1
+#1 Partition: 1200 Range: 1 1201
+#2 Partition: 1200 Range: 1201 1441201
+Index Structure Size: 6.485622 GB.
+Index structure created.
+==============================================
+Final cluster after merging: 0
+Number of noises: 0
+==============================================
+Indexing Time: 23.38 seconds
+Total Time: 2010.23 seconds
+==============================================

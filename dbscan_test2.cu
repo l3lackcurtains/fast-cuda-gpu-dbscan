@@ -19,20 +19,20 @@
 using namespace std;
 
 // Number of data in dataset to use
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 50000000
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 5000000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 512
+#define MAX_SEEDS 256
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 512
+#define EXTRA_COLLISION_SIZE 1024
 
 // Number of blocks
-#define THREAD_BLOCKS 3200
+#define THREAD_BLOCKS 512
 
 // Number of threads per block
 #define THREAD_COUNT 1024
@@ -49,13 +49,13 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION + 1)
 
 // Epslion value in DBSCAN
-#define EPS 0.01
+#define EPS 1.5
 
 #define RANGE 2
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 1200
+#define PARTITION_SIZE 100
 
 /**
 **************************************************************************
@@ -136,8 +136,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &colli
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results);
 
-void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &collisionUnion, int *runningCluster,
-                     int *clusterCount, int *noiseCount);
+void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount, int *noiseCount);
 
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                        int *seedLength, int *collisionMatrix,
@@ -475,7 +474,7 @@ int main(int argc, char **argv) {
         d_collisionMatrix, d_extraCollision, d_results);
 
     printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
-           unprocessedPoints.size());
+        unprocessedPoints.size());
 
     // If all points are processed, exit
     if (completed) {
@@ -498,10 +497,11 @@ int main(int argc, char **argv) {
  * End DBSCAN and show the results
  **************************************************************************
  */
+  
+ printf("DBSCAN completed. Finalizing clusters...\n");
 
   // Get the DBSCAN result
-  GetDbscanResult(d_dataset, d_cluster, collisionUnion, &runningCluster, &clusterCount,
-                  &noiseCount);
+  GetDbscanResult(d_cluster, &runningCluster, &clusterCount, &noiseCount);
 
   totalTimeStop = clock();
   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
@@ -605,52 +605,30 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &colli
  **************************************************************************
  */
 
-  // Define cluster to map the collisions
   map<int, int> clusterMap;
   set<int> blockSet;
-
-  // Insert chains in blockset
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
+ for (int i = 0; i < THREAD_BLOCKS; i++) {
     blockSet.insert(i);
   }
 
   set<int>::iterator it;
 
-  // Iterate through the block set until it's empty
   while (blockSet.empty() == 0) {
-    // Get a chain from blockset
     it = blockSet.begin();
     int curBlock = *it;
-
-    // Expansion Queue is use to see expansion of collision
     set<int> expansionQueue;
-
-    // Final Queue stores mapped chains for blockset chain
     set<int> finalQueue;
 
-    // Insert current chain from blockset to expansion and final queue
     expansionQueue.insert(curBlock);
     finalQueue.insert(curBlock);
 
-    // Iterate through expansion queue until it's empty
-    while (expansionQueue.empty() == 0) {
-      // Get first element from expansion queue
+   while (expansionQueue.empty() == 0) {
       it = expansionQueue.begin();
       int expandBlock = *it;
-
-      // Remove the element because we are about to expand
       expansionQueue.erase(it);
-
-      // Also erase from blockset, because we checked this chain
       blockSet.erase(expandBlock);
-
-      // Loop through chains to see more collisions
       for (int x = 0; x < THREAD_BLOCKS; x++) {
         if (x == expandBlock) continue;
-
-        // If there is collision, insert the chain in finalqueue
-        // Also, insert in expansion queue for further checking
-        // of collision with this chain
         if (localCollisionMatrix[expandBlock * THREAD_BLOCKS + x] == 1 &&
             blockSet.find(x) != blockSet.end()) {
           expansionQueue.insert(x);
@@ -659,7 +637,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &colli
       }
     }
 
-    // Iterate through final queue, and map collided chains with blockset chain
     for (it = finalQueue.begin(); it != finalQueue.end(); ++it) {
       clusterMap[*it] = curBlock;
     }
@@ -668,11 +645,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &colli
 
   map<int, int> clusterCountMap;
   for(int x = 0; x < THREAD_BLOCKS; x++) {
-    if(clusterCountMap[clusterMap[x]]) continue;
+    if(clusterCountMap[clusterMap[x]] != 0) continue;
     clusterCountMap[clusterMap[x]] = (*runningCluster);
     (*runningCluster)++;
   }
-
+  
   for (int i = 0; i < DATASET_COUNT; i++) {
     if (localCluster[i] >= 0 && localCluster[i] < THREAD_BLOCKS) {
       localCluster[i] = clusterCountMap[clusterMap[localCluster[i]]];
@@ -760,62 +737,18 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, map<int, set<int>> &colli
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
-void GetDbscanResult(double *d_dataset, int *d_cluster, map<int, set<int>> &collisionUnion, int *runningCluster,
+void GetDbscanResult(int *d_cluster, int *runningCluster,
                      int *clusterCount, int *noiseCount) {
-  /**
-**************************************************************************
-* Print the cluster and noise results
-**************************************************************************
-*/
 
+int localClusterCount = 0;
+for (int i = THREAD_BLOCKS; i < (*runningCluster); i++) {
+  if(thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) != d_cluster + DATASET_COUNT) {
+    thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i, ++localClusterCount);
+  }
+}
+*clusterCount = localClusterCount;
+*noiseCount = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, NOISE);
   
-
-  double *dataset;
-  dataset = (double *)malloc(sizeof(double) * DATASET_COUNT * DIMENSION);
-  gpuErrchk(cudaMemcpy(dataset, d_dataset,
-                       sizeof(double) * DATASET_COUNT * DIMENSION,
-                       cudaMemcpyDeviceToHost));
-
-
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyDeviceToHost));
-
-  map<int, int> finalClusterMap;
-  int localClusterCount = 0;
-  int localNoiseCount = 0;
-  for (int i = THREAD_BLOCKS; i <= *runningCluster; i++) {
-    bool found = false;
-    for (int j = 0; j < DATASET_COUNT; j++) {
-      if (localCluster[j] == i) {
-        found = true;
-        break;
-      }
-    }
-    if (found) {
-      ++localClusterCount;
-      finalClusterMap[i] = localClusterCount;
-    }
-  }
-  for (int j = 0; j < DATASET_COUNT; j++) {
-    if (localCluster[j] == NOISE) {
-      localNoiseCount++;
-    }
-  }
-
-  *clusterCount = localClusterCount;
-  *noiseCount = localNoiseCount;
-
-  for (int j = 0; j < DATASET_COUNT; j++) {
-    if (finalClusterMap[localCluster[j]] >= 0) {
-      localCluster[j] = finalClusterMap[localCluster[j]];
-    } else {
-      localCluster[j] = 0;
-    }
-  }
-
-  free(localCluster);
 }
 
 /**
