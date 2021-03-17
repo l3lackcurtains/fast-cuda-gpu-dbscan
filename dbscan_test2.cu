@@ -473,8 +473,8 @@ int main(int argc, char **argv) {
         unprocessedPoints, collisionUnion, &runningCluster, d_cluster, d_seedList, d_seedLength,
         d_collisionMatrix, d_extraCollision, d_results);
 
-    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
-        unprocessedPoints.size());
+    // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
+    //     unprocessedPoints.size());
 
     // If all points are processed, exit
     if (completed) {
