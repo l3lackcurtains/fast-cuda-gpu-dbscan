@@ -32,10 +32,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 512
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
-#define THREAD_COUNT 1024
+#define THREAD_COUNT 256
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -91,6 +91,7 @@ struct __align__(8) IndexStructure {
   int dataEnd;
   int childFrom;
 };
+
 
 __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    double *minPoints, double *binWidth,

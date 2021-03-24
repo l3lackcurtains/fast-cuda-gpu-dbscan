@@ -26,13 +26,13 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 1024
+#define MAX_SEEDS 4096
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 1024
 
 // Number of blocks
-#define THREAD_BLOCKS 1024
+#define THREAD_BLOCKS 2048
 
 // Number of threads per block
 #define THREAD_COUNT 1024
@@ -91,6 +91,7 @@ struct __align__(8) IndexStructure {
   int dataEnd;
   int childFrom;
 };
+
 
 __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    double *minPoints, double *binWidth,
