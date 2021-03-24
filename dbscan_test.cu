@@ -26,13 +26,13 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 4096
+#define MAX_SEEDS 512
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 1024
+#define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 2048
+#define THREAD_BLOCKS 9600
 
 // Number of threads per block
 #define THREAD_COUNT 1024
@@ -55,7 +55,7 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 4000
+#define PARTITION_SIZE 5000
 
 /**
 **************************************************************************
@@ -590,11 +590,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  **************************************************************************
  */
 
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyDeviceToHost));
-
   int *localCollisionMatrix;
   localCollisionMatrix =
       (int *)malloc(sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS);
@@ -616,7 +611,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  **************************************************************************
  */
 
-  map<int, int> clusterMap;
+  int clusterMap[THREAD_BLOCKS];
   set<int> blockSet;
   for (int i = 0; i < THREAD_BLOCKS; i++) {
     blockSet.insert(i);
@@ -653,21 +648,20 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
     }
   }
 
-  map<int, int> clusterCountMap;
+  int clusterCountMap[THREAD_BLOCKS];
   for (int x = 0; x < THREAD_BLOCKS; x++) {
-    if (clusterCountMap[clusterMap[x]] != 0) continue;
+    clusterCountMap[x] = UNPROCESSED;
+  }
+
+  for (int x = 0; x < THREAD_BLOCKS; x++) {
+    if (clusterCountMap[clusterMap[x]] != UNPROCESSED) continue;
     clusterCountMap[clusterMap[x]] = (*runningCluster);
     (*runningCluster)++;
   }
 
-  for (int i = 0; i < DATASET_COUNT; i++) {
-    if (localCluster[i] >= 0 && localCluster[i] < THREAD_BLOCKS) {
-      localCluster[i] = clusterCountMap[clusterMap[localCluster[i]]];
-    }
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT, x, clusterCountMap[clusterMap[x]]);
   }
-
-  gpuErrchk(cudaMemcpy(d_cluster, localCluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyHostToDevice));
 
   for (int x = 0; x < THREAD_BLOCKS; x++) {
     if (localExtraCollision[x * EXTRA_COLLISION_SIZE] == -1) continue;
@@ -689,6 +683,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  * insert one point to each of the seedlist
  **************************************************************************
  */
+
+ int *localCluster;
+ localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
+ gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
+                      cudaMemcpyDeviceToHost));
 
   int complete = 0;
   for (int i = 0; i < THREAD_BLOCKS; i++) {
@@ -1032,8 +1031,9 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue,
                                    double *upperBounds) {
-  for(int x = 0; x < DIMENSION; x++) {
-    indexConstruction(x, indexTreeMetaData, minPoints, binWidth, indexBuckets, upperBounds);
+  if (blockIdx.x < DIMENSION) {
+    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
+                      indexBuckets, upperBounds);
   }
   __syncthreads();
 
@@ -1081,9 +1081,9 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
                                   double *upperBounds) {
-  for (int k = blockIdx.x + indexTreeMetaData[level * RANGE + 0];
-       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_BLOCKS) {
-    for (int i = threadIdx.x; i < PARTITION_SIZE; i = i + THREAD_COUNT) {
+  for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
+       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
+    for (int i = 0; i < PARTITION_SIZE; i++) {
       int currentBucketIndex =
           indexTreeMetaData[level * RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
@@ -1124,15 +1124,31 @@ __device__ void insertData(int id, double *dataset,
     if (indexBuckets[currentIndex]->dimension >= DIMENSION) break;
     double comparingData = data[indexBuckets[currentIndex]->dimension];
 
-    int k = thrust::upper_bound(thrust::device, upperBounds + indexBuckets[currentIndex]->childFrom,
-      upperBounds + indexBuckets[currentIndex]->childFrom + PARTITION_SIZE, comparingData, thrust::less<double>()) - upperBounds;
+    for (int k = indexBuckets[currentIndex]->childFrom;
+         k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE; k++) {
+      double leftRange;
+      double rightRange;
+      if (k == indexBuckets[currentIndex]->childFrom) {
+        leftRange =
+            upperBounds[k] - binWidth[indexBuckets[currentIndex]->dimension];
+      } else {
+        leftRange = upperBounds[k - 1];
+      }
 
-    if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-      dataValue[id] = id;
-      dataKey[id] = k;
-      found = true;
+      rightRange = upperBounds[k];
+      
+
+      if (comparingData >= leftRange && comparingData < rightRange) {
+        if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
+          dataValue[id] = id;
+          dataKey[id] = k;
+          found = true;
+          break;
+        }
+        currentIndex = k;
+        break;
+      }
     }
-    currentIndex = k;      
   }
 }
 

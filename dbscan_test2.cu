@@ -32,10 +32,10 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 128
+#define THREAD_BLOCKS 256
 
 // Number of threads per block
-#define THREAD_COUNT 256
+#define THREAD_COUNT 512
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -590,11 +590,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  **************************************************************************
  */
 
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyDeviceToHost));
-
   int *localCollisionMatrix;
   localCollisionMatrix =
       (int *)malloc(sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS);
@@ -616,7 +611,7 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  **************************************************************************
  */
 
-  map<int, int> clusterMap;
+  int clusterMap[THREAD_BLOCKS];
   set<int> blockSet;
   for (int i = 0; i < THREAD_BLOCKS; i++) {
     blockSet.insert(i);
@@ -653,21 +648,20 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
     }
   }
 
-  map<int, int> clusterCountMap;
+  int clusterCountMap[THREAD_BLOCKS];
   for (int x = 0; x < THREAD_BLOCKS; x++) {
-    if (clusterCountMap[clusterMap[x]] != 0) continue;
+    clusterCountMap[x] = UNPROCESSED;
+  }
+
+  for (int x = 0; x < THREAD_BLOCKS; x++) {
+    if (clusterCountMap[clusterMap[x]] != UNPROCESSED) continue;
     clusterCountMap[clusterMap[x]] = (*runningCluster);
     (*runningCluster)++;
   }
 
-  for (int i = 0; i < DATASET_COUNT; i++) {
-    if (localCluster[i] >= 0 && localCluster[i] < THREAD_BLOCKS) {
-      localCluster[i] = clusterCountMap[clusterMap[localCluster[i]]];
-    }
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT, x, clusterCountMap[clusterMap[x]]);
   }
-
-  gpuErrchk(cudaMemcpy(d_cluster, localCluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyHostToDevice));
 
   for (int x = 0; x < THREAD_BLOCKS; x++) {
     if (localExtraCollision[x * EXTRA_COLLISION_SIZE] == -1) continue;
@@ -689,6 +683,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
  * insert one point to each of the seedlist
  **************************************************************************
  */
+
+ int *localCluster;
+ localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
+ gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
+                      cudaMemcpyDeviceToHost));
 
   int complete = 0;
   for (int i = 0; i < THREAD_BLOCKS; i++) {
