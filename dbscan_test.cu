@@ -29,10 +29,10 @@ using namespace std;
 #define MAX_SEEDS 1024
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 512
+#define EXTRA_COLLISION_SIZE 1024
 
 // Number of blocks
-#define THREAD_BLOCKS 2048
+#define THREAD_BLOCKS 1024
 
 // Number of threads per block
 #define THREAD_COUNT 1024
@@ -55,7 +55,7 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 2500
+#define PARTITION_SIZE 4000
 
 /**
 **************************************************************************
