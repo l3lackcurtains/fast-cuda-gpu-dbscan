@@ -32,7 +32,7 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 256
+#define THREAD_BLOCKS 128
 
 // Number of threads per block
 #define THREAD_COUNT 512
@@ -85,7 +85,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 */
 
 struct __align__(8) IndexStructure {
-  int id;
   int dimension;
   int dataBegin;
   int dataEnd;
@@ -544,6 +543,8 @@ int main(int argc, char **argv) {
 
   cudaFree(d_dataKey);
   cudaFree(d_dataValue);
+  cudaFree(d_upperBounds);
+  cudaFree(d_binWidth);
 }
 
 /**
@@ -1031,9 +1032,8 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue,
                                    double *upperBounds) {
-  if (blockIdx.x < DIMENSION) {
-    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
-                      indexBuckets, upperBounds);
+  for(int x = 0; x < DIMENSION; x++) {
+    indexConstruction(x, indexTreeMetaData, minPoints, binWidth, indexBuckets, upperBounds);
   }
   __syncthreads();
 
@@ -1081,17 +1081,15 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
                                   double *upperBounds) {
-  for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
-       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
-    for (int i = 0; i < PARTITION_SIZE; i++) {
+  for (int k = blockIdx.x + indexTreeMetaData[level * RANGE + 0];
+       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_BLOCKS) {
+    for (int i = threadIdx.x; i < PARTITION_SIZE; i = i + THREAD_COUNT) {
       int currentBucketIndex =
           indexTreeMetaData[level * RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
 
       indexBuckets[k]->dimension = level;
       indexBuckets[currentBucketIndex]->dimension = level + 1;
-
-      indexBuckets[currentBucketIndex]->id = currentBucketIndex;
 
       if (i == 0) {
         indexBuckets[k]->childFrom = currentBucketIndex;
@@ -1124,31 +1122,15 @@ __device__ void insertData(int id, double *dataset,
     if (indexBuckets[currentIndex]->dimension >= DIMENSION) break;
     double comparingData = data[indexBuckets[currentIndex]->dimension];
 
-    for (int k = indexBuckets[currentIndex]->childFrom;
-         k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE; k++) {
-      double leftRange;
-      double rightRange;
-      if (k == indexBuckets[currentIndex]->childFrom) {
-        leftRange =
-            upperBounds[k] - binWidth[indexBuckets[currentIndex]->dimension];
-      } else {
-        leftRange = upperBounds[k - 1];
-      }
+    int k = thrust::upper_bound(thrust::device, upperBounds + indexBuckets[currentIndex]->childFrom,
+      upperBounds + indexBuckets[currentIndex]->childFrom + PARTITION_SIZE, comparingData, thrust::less<double>()) - upperBounds;
 
-      rightRange = upperBounds[k];
-      
-
-      if (comparingData >= leftRange && comparingData < rightRange) {
-        if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-          dataValue[id] = id;
-          dataKey[id] = k;
-          found = true;
-          break;
-        }
-        currentIndex = k;
-        break;
-      }
+    if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
+      dataValue[id] = id;
+      dataKey[id] = k;
+      found = true;
     }
+    currentIndex = k;      
   }
 }
 
