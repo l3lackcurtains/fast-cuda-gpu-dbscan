@@ -26,10 +26,10 @@ using namespace std;
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 256
+#define MAX_SEEDS 1024
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 1024
+#define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
 #define THREAD_BLOCKS 2048
@@ -55,7 +55,7 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 4000
+#define PARTITION_SIZE 2500
 
 /**
 **************************************************************************
@@ -1031,9 +1031,8 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue,
                                    double *upperBounds) {
-  if (blockIdx.x < DIMENSION) {
-    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
-                      indexBuckets, upperBounds);
+  for(int x = 0; x < DIMENSION; x++) {
+    indexConstruction(x, indexTreeMetaData, minPoints, binWidth, indexBuckets, upperBounds);
   }
   __syncthreads();
 
@@ -1081,9 +1080,9 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
                                   double *upperBounds) {
-  for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
-       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
-    for (int i = 0; i < PARTITION_SIZE; i++) {
+  for (int k = blockIdx.x + indexTreeMetaData[level * RANGE + 0];
+       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_BLOCKS) {
+    for (int i = threadIdx.x; i < PARTITION_SIZE; i = i + THREAD_COUNT) {
       int currentBucketIndex =
           indexTreeMetaData[level * RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
