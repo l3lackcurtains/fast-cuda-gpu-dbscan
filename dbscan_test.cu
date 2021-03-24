@@ -29,13 +29,13 @@ using namespace std;
 #define MAX_SEEDS 256
 
 // Extra collission size to detect final clusters collision
-#define EXTRA_COLLISION_SIZE 512
+#define EXTRA_COLLISION_SIZE 1024
 
 // Number of blocks
-#define THREAD_BLOCKS 256
+#define THREAD_BLOCKS 2048
 
 // Number of threads per block
-#define THREAD_COUNT 512
+#define THREAD_COUNT 1024
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -55,7 +55,7 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 1500
+#define PARTITION_SIZE 4000
 
 /**
 **************************************************************************
@@ -97,21 +97,21 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    int *results,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue,
-                                   double *upperBounds, int *indexTreeChild);
+                                   double *upperBounds);
 
 __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
                                     struct IndexStructure **indexBuckets,
-                                    int *dataKey, int *indexTreeChild);
+                                    int *dataKey);
 
 __device__ void indexConstruction(int dimension, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
-                                  double *upperBounds, int *indexTreeChild);
+                                  double *upperBounds);
 
 __device__ void insertData(int id, double *dataset,
                            struct IndexStructure **indexBuckets, int *dataKey,
                            int *dataValue, double *upperBounds,
-                           double *binWidth, int *indexTreeChild);
+                           double *binWidth);
 
 __device__ void searchPoints(double *data, int chainID, double *dataset,
                              int *results, struct IndexStructure **indexBuckets,
@@ -416,16 +416,11 @@ int main(int argc, char **argv) {
   int *d_dataKey;
   int *d_dataValue;
   double *d_upperBounds;
-  int *d_indexTreeChild;
 
   gpuErrchk(cudaMalloc((void **)&d_dataKey, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_upperBounds,
                        sizeof(double) * indexedStructureSize));
-  gpuErrchk(cudaMalloc((void **)&d_indexTreeChild,
-                       sizeof(int) * indexedStructureSize));
-  gpuErrchk(
-      cudaMemset(d_indexTreeChild, -1, sizeof(int) * indexedStructureSize));
   /**
  **************************************************************************
  * Start Indexing first
@@ -435,7 +430,7 @@ int main(int argc, char **argv) {
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
       d_dataset, d_indexTreeMetaData, d_minPoints, d_binWidth, d_results,
-      d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds, d_indexTreeChild);
+      d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
 
   cudaFree(d_indexTreeMetaData);
@@ -453,7 +448,7 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaDeviceSynchronize());
 
   INDEXING_ADJUSTMENT<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_indexTreeMetaData, d_indexBuckets, d_dataKey, d_indexTreeChild);
+      d_indexTreeMetaData, d_indexBuckets, d_dataKey);
 
   gpuErrchk(cudaDeviceSynchronize());
 
@@ -757,11 +752,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints,
 void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                      int *noiseCount) {
   int localClusterCount = 0;
-  for (int i = THREAD_BLOCKS; i < (*runningCluster); i++) {
+  
+  for (int i = THREAD_BLOCKS; i <= (*runningCluster); i++) {
     if (thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) !=
         d_cluster + DATASET_COUNT) {
-      thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i,
-                      ++localClusterCount);
+        localClusterCount++;
     }
   }
   *clusterCount = localClusterCount;
@@ -1035,10 +1030,10 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                    int *results,
                                    struct IndexStructure **indexBuckets,
                                    int *dataKey, int *dataValue,
-                                   double *upperBounds, int *indexTreeChild) {
+                                   double *upperBounds) {
   if (blockIdx.x < DIMENSION) {
     indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
-                      indexBuckets, upperBounds, indexTreeChild);
+                      indexBuckets, upperBounds);
   }
   __syncthreads();
 
@@ -1050,14 +1045,14 @@ __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
   for (int i = threadId; i < DATASET_COUNT;
        i = i + THREAD_COUNT * THREAD_BLOCKS) {
     insertData(i, dataset, indexBuckets, dataKey, dataValue, upperBounds,
-               binWidth, indexTreeChild);
+               binWidth);
   }
   __syncthreads();
 }
 
 __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
                                     struct IndexStructure **indexBuckets,
-                                    int *dataKey, int *indexTreeChild) {
+                                    int *dataKey) {
   __shared__ int indexingRange;
   if (threadIdx.x == 0) {
     indexingRange = indexTreeMetaData[DIMENSION * RANGE + 1] -
@@ -1085,7 +1080,7 @@ __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
 __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
-                                  double *upperBounds, int *indexTreeChild) {
+                                  double *upperBounds) {
   for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
        k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
     for (int i = 0; i < PARTITION_SIZE; i++) {
@@ -1116,7 +1111,7 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
 __device__ void insertData(int id, double *dataset,
                            struct IndexStructure **indexBuckets, int *dataKey,
                            int *dataValue, double *upperBounds,
-                           double *binWidth, int *indexTreeChild) {
+                           double *binWidth) {
   double data[DIMENSION];
   for (int j = 0; j < DIMENSION; j++) {
     data[j] = dataset[id * DIMENSION + j];
@@ -1129,31 +1124,15 @@ __device__ void insertData(int id, double *dataset,
     if (indexBuckets[currentIndex]->dimension >= DIMENSION) break;
     double comparingData = data[indexBuckets[currentIndex]->dimension];
 
-    for (int k = indexBuckets[currentIndex]->childFrom;
-         k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE; k++) {
-      double leftRange;
-      double rightRange;
-      if (k == indexBuckets[currentIndex]->childFrom) {
-        leftRange =
-            upperBounds[k] - binWidth[indexBuckets[currentIndex]->dimension];
-      } else {
-        leftRange = upperBounds[k - 1];
-      }
+    int k = thrust::upper_bound(thrust::device, upperBounds + indexBuckets[currentIndex]->childFrom,
+      upperBounds + indexBuckets[currentIndex]->childFrom + PARTITION_SIZE, comparingData, thrust::less<double>()) - upperBounds;
 
-      rightRange = upperBounds[k];
-      
-
-      if (comparingData >= leftRange && comparingData < rightRange) {
-        if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-          dataValue[id] = id;
-          dataKey[id] = k;
-          found = true;
-          break;
-        }
-        currentIndex = k;
-        break;
-      }
+    if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
+      dataValue[id] = id;
+      dataKey[id] = k;
+      found = true;
     }
+    currentIndex = k;      
   }
 }
 
