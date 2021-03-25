@@ -1,5 +1,5 @@
 NVCC= nvcc
-CUDAFLAGS= -O3 -std=c++11
+CUDAFLAGS= -O3 -std=c++14
 CFLAGS= -c
 
 main: main.o indexing.o dbscan.o

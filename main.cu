@@ -192,10 +192,11 @@ int main(int argc, char **argv) {
   for (int x = 0; x < DIMENSION; x++) {
     printf("#%d Bin Width: %lf\n", x, binWidth[x]);
   }
-  printf("Min Bin Size: %lf\n", minBinSize);
+
+  printf("==============================================\n");
 
   if (minBinSize < EPS) {
-    printf("Bin width (%f) is less than EPS(%f).", minBinSize, EPS);
+    printf("Bin width (%f) is less than EPS(%f).\n", minBinSize, EPS);
     exit(0);
   }
 
@@ -234,6 +235,7 @@ int main(int argc, char **argv) {
     printf("Range: %d %d\n", startEndIndexes[i * RANGE + 0],
            startEndIndexes[i * RANGE + 1]);
   }
+  printf("==============================================\n");
 
   gpuErrchk(cudaMemcpy(d_minPoints, minPoints, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
@@ -377,6 +379,7 @@ int main(int argc, char **argv) {
  * End DBSCAN and show the results
  **************************************************************************
  */
+  printf("==============================================\n");
 
   printf("DBSCAN completed. Finalizing clusters...\n");
 

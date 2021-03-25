@@ -1,7 +1,7 @@
 {
   "files.associations": {
     "*.rmd": "markdown",
-    "*.cu": "cpp",
+    "*.cu": "cuda",
     "iostream": "cpp",
     "any": "cpp",
     "array": "cpp",
@@ -75,7 +75,6 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "valarray": "cpp",
-    "variant": "cpp",
-    "*.cuh": "cpp"
+    "variant": "cpp"
   }
 }

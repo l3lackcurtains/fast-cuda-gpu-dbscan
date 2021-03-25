@@ -24,6 +24,23 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
                                 int *seedList, int *seedLength,
                                 int *collisionMatrix, int *extraCollision);
 
+// TESTING
 
+__global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
+                                    int *seedList, int *seedLength,
+                                    int *collisionMatrix, int *extraCollision,
+                                    int *results,
+                                    struct IndexStructure **indexBuckets,
+                                    int *indexesStack, int *dataValue,
+                                    double *upperBounds, double *binWidth);
+
+__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
+                                 int *cluster, int *seedList, int *seedLength,
+                                 int *runningCluster);
+bool TestMonitorSeedPoints(vector<int> &unprocessedPoints, 
+    int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results);
+
+void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
+                     int *noiseCount);
 
 #endif

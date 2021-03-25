@@ -4,14 +4,14 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 1864620
-// #define DATASET_COUNT 50000000
+// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 100000
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 256
+#define MAX_SEEDS 128
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 512
@@ -40,7 +40,12 @@ using namespace std;
 
 #define POINTS_SEARCHED 9
 
-#define PARTITION_SIZE 100
+#define PARTITION_SIZE 60
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////
 
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
