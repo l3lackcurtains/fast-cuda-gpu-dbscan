@@ -17,9 +17,9 @@
 #include <vector>
 
 
-#include "./common.h"
-#include "./dbscan.h"
-#include "./indexing.h"
+#include "common.h"
+#include "indexing.h"
+#include "dbscan.h"
 
 using namespace std;
 

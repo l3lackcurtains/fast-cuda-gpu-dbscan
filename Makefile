@@ -14,7 +14,5 @@ dbscan.o: dbscan.cu common.h indexing.h dbscan.h
 main.o: main.cu common.h indexing.h dbscan.h
 	$(NVCC) $(CUDAFLAGS) $(CFLAGS) main.cu
 
-
-
 clean:	
-	rm -rf *.o main
+	rm -rf *.o *.exe

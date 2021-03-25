@@ -2,7 +2,6 @@
 #define DBSCAN_H
 
 #include "common.h"
-#include "dbscan.h"
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints,
                        map<int, set<int>> &collisionUnion, int *runningCluster,

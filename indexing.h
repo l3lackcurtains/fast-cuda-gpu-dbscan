@@ -23,9 +23,7 @@ __device__ void insertData(int id, double *dataset,
                            double *binWidth);
 
 __device__ void searchPoints(double *data, int chainID, double *dataset,
-                             int *results, struct IndexStructure **indexBuckets,
-
-                             int *indexesStack, int *dataValue,
+                             int *results, struct IndexStructure **indexBuckets, int *indexesStack, int *dataValue,
                              double *upperBounds, double *binWidth);
 
 #endif

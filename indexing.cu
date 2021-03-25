@@ -124,4 +124,3 @@ __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
   }
   __syncthreads();
 }
-

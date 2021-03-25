@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "indexing.h"
+#include "dbscan.h"
 
 __device__ void searchPoints(double *data, int chainID, double *dataset,
                              int *results, struct IndexStructure **indexBuckets,
