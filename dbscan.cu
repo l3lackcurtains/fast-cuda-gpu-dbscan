@@ -442,7 +442,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth) {
+                                    double *upperBounds, double *binWidth, int *runningCluster) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -574,13 +574,17 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   }
 
   __syncthreads();
+  if(blockIdx.x == THREAD_BLOCKS - 1) {
+    mergeCollisions(collisionMatrix, extraCollision, cluster, seedList, seedLength, runningCluster);
+  }
+
 }
 
-__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
+__device__ void mergeCollisions(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
                                  int *runningCluster) {
     
-  if(blockIdx.x == 10) {
+  
 
     __shared__ int clusterMap[THREAD_BLOCKS];
     __shared__ int clusterCountMap[THREAD_BLOCKS];
@@ -631,21 +635,23 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
         for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
          
           if (x != expandBlock) {
+
           
-            if ((collisionMatrix[expandBlock * THREAD_BLOCKS + x] == 1 ||
-                  collisionMatrix[x * THREAD_BLOCKS + expandBlock]) &&
-                thrust::find(thrust::device, blockSet, blockSet + THREAD_BLOCKS,
-                              x) != blockSet + THREAD_BLOCKS) {
+            if (collisionMatrix[expandBlock * THREAD_BLOCKS + x] == 1 && 
+              thrust::find(thrust::device, blockSet, blockSet + blocksetCount, x) !=
+                blockSet + blocksetCount) {
+
+
               if (thrust::find(thrust::device, expansionQueue,
-                                expansionQueue + THREAD_BLOCKS,
-                                x) == expansionQueue + THREAD_BLOCKS) {
+                                expansionQueue + expansionQueueCount,
+                                x) == expansionQueue + expansionQueueCount) {
                   int oldExpansionQueueCount = atomicAdd(&expansionQueueCount, 1);
                   expansionQueue[oldExpansionQueueCount] = x;                
               }
 
               if (thrust::find(thrust::device, finalQueue,
-                                finalQueue + THREAD_BLOCKS,
-                                x) == finalQueue + THREAD_BLOCKS) {
+                                finalQueue + finalQueueCount,
+                                x) == finalQueue + finalQueueCount) {
                   int oldFinalQueueCount = atomicAdd(&finalQueueCount, 1);
                   finalQueue[oldFinalQueueCount] = x;
               }
@@ -675,7 +681,7 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
     for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
       
       if (clusterCountMap[clusterMap[x]] == UNPROCESSED) {
-        int oldClusterCount = atomicAdd(&runningCluster[0], 1);
+        int oldClusterCount = atomicAdd(runningCluster, 1);
         clusterCountMap[clusterMap[x]] = oldClusterCount;
       }
       __syncthreads();      
@@ -692,17 +698,15 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
     for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
       
       if (extraCollision[x * EXTRA_COLLISION_SIZE] != UNPROCESSED) {
-        int minCluster = extraCollision[x * EXTRA_COLLISION_SIZE];
-        thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, clusterCountMap[clusterMap[x]], minCluster);
+        thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, clusterCountMap[clusterMap[x]], extraCollision[x * EXTRA_COLLISION_SIZE]);
         for (int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
           if (extraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
-          thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, extraCollision[x * EXTRA_COLLISION_SIZE + y], minCluster);
+          thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, extraCollision[x * EXTRA_COLLISION_SIZE + y], extraCollision[x * EXTRA_COLLISION_SIZE]);
         }
       }
       __syncthreads();
     }
-  }   
-  __syncthreads();
+
 
 }
 
