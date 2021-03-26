@@ -442,7 +442,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth, int *runningCluster) {
+                                    double *upperBounds, double *binWidth) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -574,17 +574,13 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   }
 
   __syncthreads();
-  if(blockIdx.x == THREAD_BLOCKS - 1) {
-    mergeCollisions(collisionMatrix, extraCollision, cluster, seedList, seedLength, runningCluster);
-  }
-
 }
 
-__device__ void mergeCollisions(int *collisionMatrix, int *extraCollision,
+__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
                                  int *runningCluster) {
     
-  
+  if(blockIdx.x == 0) {
 
     __shared__ int clusterMap[THREAD_BLOCKS];
     __shared__ int clusterCountMap[THREAD_BLOCKS];
@@ -706,7 +702,8 @@ __device__ void mergeCollisions(int *collisionMatrix, int *extraCollision,
       }
       __syncthreads();
     }
-
+  }   
+  __syncthreads();
 
 }
 

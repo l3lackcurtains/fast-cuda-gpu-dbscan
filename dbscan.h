@@ -32,13 +32,11 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth, int *runningCluster);
+                                    double *upperBounds, double *binWidth);
 
-__device__ void mergeCollisions(int *collisionMatrix, int *extraCollision,
+__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
                                  int *runningCluster);
-
-
 bool TestMonitorSeedPoints(vector<int> &unprocessedPoints, 
     int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results);
 
