@@ -576,14 +576,21 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   __syncthreads();
 }
 
+__device__ int clusterMap[THREAD_BLOCKS];
+__device__ int clusterCountMap[THREAD_BLOCKS];
+
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
-                                 int *runningCluster) {
-    
-  if(blockIdx.x == 0) {
+                                 int *runningCluster, int *processedPoints) {
+  
 
-    __shared__ int clusterMap[THREAD_BLOCKS];
-    __shared__ int clusterCountMap[THREAD_BLOCKS];
+  if(threadIdx.x == 0) {
+    clusterMap[blockIdx.x] = UNPROCESSED;
+    clusterCountMap[blockIdx.x] = UNPROCESSED;
+  }
+  __syncthreads();
+
+  if(blockIdx.x == 0) {
     __shared__ int blockSet[THREAD_BLOCKS];
     __shared__ int blocksetCount;
     __shared__ int curBlock;
@@ -594,7 +601,6 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
     __shared__ int expandBlock;
 
     for (int i = threadIdx.x; i < THREAD_BLOCKS; i = i + THREAD_COUNT) {
-      clusterMap[i] = i;
       blockSet[i] = i;
     }
     __syncthreads();
@@ -669,47 +675,79 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
 
 
     for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
-      clusterCountMap[x] = UNPROCESSED;
-    }
-    __syncthreads();
-
-
-    for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
-      
       if (clusterCountMap[clusterMap[x]] == UNPROCESSED) {
         int oldClusterCount = atomicAdd(runningCluster, 1);
         clusterCountMap[clusterMap[x]] = oldClusterCount;
       }
-      __syncthreads();      
-      
+      __syncthreads();
     }
     __syncthreads();
-
-    for(int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
-      thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, x, clusterCountMap[clusterMap[x]]);
-    }
-    __syncthreads();
-
-
-    for (int x = threadIdx.x; x < THREAD_BLOCKS; x = x + THREAD_COUNT) {
-      
-      if (extraCollision[x * EXTRA_COLLISION_SIZE] != UNPROCESSED) {
-        thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, clusterCountMap[clusterMap[x]], extraCollision[x * EXTRA_COLLISION_SIZE]);
-        for (int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
-          if (extraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
-          thrust::replace(thrust::device, cluster, cluster + DATASET_COUNT, extraCollision[x * EXTRA_COLLISION_SIZE + y], extraCollision[x * EXTRA_COLLISION_SIZE]);
-        }
+    
+    for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
+      if (cluster[i] >= 0 && cluster[i] < THREAD_BLOCKS) {
+        cluster[i] = clusterCountMap[clusterMap[cluster[i]]];
       }
       __syncthreads();
     }
-  }   
+    __syncthreads();
+
+  for (int x = 0; x < THREAD_BLOCKS; x++) {
+      if (extraCollision[x * EXTRA_COLLISION_SIZE] != UNPROCESSED) {
+
+        for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
+          if(cluster[i] == clusterCountMap[clusterMap[x]]) cluster[i] = extraCollision[x * EXTRA_COLLISION_SIZE];
+        }
+        __syncthreads();
+
+
+        for (int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
+          if (extraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED) break;
+
+          for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
+            if(extraCollision[x * EXTRA_COLLISION_SIZE + y] == cluster[i]) cluster[i] = extraCollision[x * EXTRA_COLLISION_SIZE];
+          }
+          __syncthreads();
+        }
+        __syncthreads();
+
+      }
+      __syncthreads();
+    }
+    __syncthreads();
+  }
+
   __syncthreads();
+
+    __shared__ int stopTraverse;
+    __shared__ int chainID;
+
+    if(threadIdx.x == 0) {
+      chainID = blockIdx.x;
+      stopTraverse = 0;
+    }
+    __syncthreads();
+
+    for(int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
+      
+      if(stopTraverse == 1) break;
+      __syncthreads();
+
+      if(processedPoints[x] == 0 && cluster[x] == UNPROCESSED) {
+        seedList[chainID * MAX_SEEDS] = x;
+        seedLength[chainID] = 1;
+        processedPoints[x] = -1;
+        atomicCAS(&stopTraverse, 0, 1);
+      }
+      __syncthreads();
+
+    }
+    __syncthreads();
 
 }
 
 
 
-bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results) {
+bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results, int* d_processedPoints) {
   
   
   int *localSeedLength;
@@ -726,7 +764,9 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int 
   localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
   gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
                        cudaMemcpyDeviceToHost));
+  
 
+  /*
   int complete = 0;
   for (int i = 0; i < THREAD_BLOCKS; i++) {
     bool found = false;
@@ -746,6 +786,7 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int 
       complete++;
     }
   }
+  */
 
   // FInally, transfer back the CPU memory to GPU and run DBSCAN process
 
@@ -761,7 +802,12 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int 
   free(localSeedList);
   free(localSeedLength);
 
-  if (complete == THREAD_BLOCKS) {
+
+  int completed = thrust::count(thrust::device, d_processedPoints, d_processedPoints + DATASET_COUNT, -1);
+
+  printf("Processed points: %d\n", completed);
+
+  if (completed == DATASET_COUNT) {
     return true;
   }
 

@@ -116,6 +116,7 @@ int main(int argc, char **argv) {
   int *d_results;
   double *d_minPoints;
   double *d_binWidth;
+  int *d_processedPoints;
 
   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData,
                        sizeof(int) * TREE_LEVELS * RANGE));
@@ -129,6 +130,8 @@ int main(int argc, char **argv) {
 
   gpuErrchk(
       cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
+
+  gpuErrchk(cudaMalloc((void **)&d_processedPoints, sizeof(int) * DATASET_COUNT));
 
   /**
  **************************************************************************
@@ -151,6 +154,9 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMemset(d_extraCollision, -1,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
+
+
+  thrust::fill(thrust::device, d_processedPoints, d_processedPoints + DATASET_COUNT, 0);
 
   /**
 **************************************************************************
@@ -294,6 +300,7 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_upperBounds,
                        sizeof(double) * indexedStructureSize));
+  
   /**
  **************************************************************************
  * Start Indexing first
@@ -354,7 +361,7 @@ int main(int argc, char **argv) {
 
   while (!exit) {
     // Monitor the seed list and return the comptetion status of points
-    int completed = TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength, d_results);
+    int completed = TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength, d_results, d_processedPoints);
 
     gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
     printf("Running cluster %d, unprocessed points: %lu\n", runningCluster[0],
@@ -376,7 +383,7 @@ int main(int argc, char **argv) {
     
     gpuErrchk(cudaDeviceSynchronize());
     COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster);
+      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_processedPoints);
     gpuErrchk(cudaDeviceSynchronize());
   }
 

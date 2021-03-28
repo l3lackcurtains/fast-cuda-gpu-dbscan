@@ -36,9 +36,9 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                  int *cluster, int *seedList, int *seedLength,
-                                 int *runningCluster);
+                                 int *runningCluster, int *processedPoints);
 bool TestMonitorSeedPoints(vector<int> &unprocessedPoints, 
-    int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results);
+    int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results, int* d_processedPoints);
 
 void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                      int *noiseCount);
