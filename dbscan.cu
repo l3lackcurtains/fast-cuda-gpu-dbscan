@@ -718,100 +718,39 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
 
   __syncthreads();
 
-    __shared__ int stopTraverse;
-    __shared__ int chainID;
 
-    if(threadIdx.x == 0) {
-      chainID = blockIdx.x;
-      stopTraverse = 0;
-    }
-    __syncthreads();
 
-    for(int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
-      
-      if(stopTraverse == 1) break;
-      __syncthreads();
 
-      if(processedPoints[x] == 0 && cluster[x] == UNPROCESSED) {
+  __shared__ int chainID;
+
+  if(threadIdx.x == 0) {
+    chainID = blockIdx.x;
+    seedList[chainID * MAX_SEEDS] = UNPROCESSED;
+  }
+  __syncthreads();
+
+  for(int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
+  
+    if(cluster[x] == UNPROCESSED) {
+      bool found = false;
+      for(int y = 0; y < THREAD_BLOCKS; y++) {
+        if(seedList[y * MAX_SEEDS] == x) found = true; 
+      }
+      if(!found) {
         seedList[chainID * MAX_SEEDS] = x;
         seedLength[chainID] = 1;
         processedPoints[x] = -1;
-        atomicCAS(&stopTraverse, 0, 1);
+        break;
       }
       __syncthreads();
-
+      
     }
     __syncthreads();
 
-}
-
-
-
-bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,  int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results, int* d_processedPoints) {
-  
-  
-  int *localSeedLength;
-  localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
-  gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
-                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
-
-  int *localSeedList;
-  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
-  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
-                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                       cudaMemcpyDeviceToHost));
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_cluster, sizeof(int) * DATASET_COUNT,
-                       cudaMemcpyDeviceToHost));
-  
-
-  /*
-  int complete = 0;
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    bool found = false;
-    while (!unprocessedPoints.empty()) {
-      int lastPoint = unprocessedPoints.back();
-      unprocessedPoints.pop_back();
-
-      if (localCluster[lastPoint] == UNPROCESSED) {
-        localSeedLength[i] = 1;
-        localSeedList[i * MAX_SEEDS] = lastPoint;
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) {
-      complete++;
-    }
   }
-  */
+  
+  __syncthreads();
 
-  // FInally, transfer back the CPU memory to GPU and run DBSCAN process
-
-  gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
-                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
-                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                       cudaMemcpyHostToDevice));
-
-  // Free CPU memories
-  free(localCluster);
-  free(localSeedList);
-  free(localSeedLength);
-
-
-  int completed = thrust::count(thrust::device, d_processedPoints, d_processedPoints + DATASET_COUNT, -1);
-
-  printf("Processed points: %d\n", completed);
-
-  if (completed == DATASET_COUNT) {
-    return true;
-  }
-
-  return false;
 }
 
 

@@ -158,6 +158,32 @@ int main(int argc, char **argv) {
 
   thrust::fill(thrust::device, d_processedPoints, d_processedPoints + DATASET_COUNT, 0);
 
+  int *localSeedList;
+  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
+  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
+                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                       cudaMemcpyDeviceToHost));
+
+  int *localSeedLength;
+  localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
+  gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
+                      sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
+
+  for(int x = 0; x < THREAD_BLOCKS; x++) {
+    localSeedList[x * MAX_SEEDS] = x;
+    localSeedLength[x] = 1;
+  }
+
+  gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
+    sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+
+  gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
+      sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+      cudaMemcpyHostToDevice));
+  
+  free(localSeedList);
+  free(localSeedLength);
+
   /**
 **************************************************************************
 * Initialize index structure
@@ -356,23 +382,17 @@ int main(int argc, char **argv) {
   // Keeps track of number of noises
   int noiseCount = 0;
 
-  // Handler to conmtrol the while loop
-  bool exit = false;
 
-  while (!exit) {
-    // Monitor the seed list and return the comptetion status of points
-    int completed = TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength, d_results, d_processedPoints);
+  while (1) {
 
-    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
-    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster[0],
-        unprocessedPoints.size());
-
-    // If all points are processed, exit
-    if (completed) {
-      exit = true;
+    int completed = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, -1);
+    if (completed  == 0) {
+      break;
     }
 
-    if (exit) break;
+    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
+    printf("Running cluster %d, Processed points: %d\n", runningCluster[0], DATASET_COUNT - completed);
+
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
