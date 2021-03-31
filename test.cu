@@ -386,13 +386,12 @@ int main(int argc, char **argv) {
   while (1) {
 
     int completed = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, -1);
+    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
+    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], completed);
+
     if (completed  == 0) {
       break;
     }
-
-    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
-    printf("Running cluster %d, Processed points: %d\n", runningCluster[0], DATASET_COUNT - completed);
-
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
@@ -412,14 +411,15 @@ int main(int argc, char **argv) {
  * End DBSCAN and show the results
  **************************************************************************
  */
+  totalTimeStop = clock();
+
   printf("==============================================\n");
 
-  printf("DBSCAN completed. Finalizing clusters...\n");
+  printf("DBSCAN completed. Calculating clusters...\n");
 
   // Get the DBSCAN result
   TestGetDbscanResult(d_cluster, runningCluster, &clusterCount, &noiseCount);
 
-  totalTimeStop = clock();
   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 

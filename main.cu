@@ -379,14 +379,15 @@ int main(int argc, char **argv) {
  * End DBSCAN and show the results
  **************************************************************************
  */
+  totalTimeStop = clock();
+
   printf("==============================================\n");
 
-  printf("DBSCAN completed. Finalizing clusters...\n");
-
+  printf("DBSCAN completed. Calculating clusters...\n");
+  
   // Get the DBSCAN result
   GetDbscanResult(d_cluster, &runningCluster, &clusterCount, &noiseCount);
-
-  totalTimeStop = clock();
+  
   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 
