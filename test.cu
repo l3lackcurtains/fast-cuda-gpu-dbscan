@@ -391,17 +391,8 @@ int main(int argc, char **argv) {
   // Keeps track of number of noises
   int noiseCount = 0;
 
-
-  while (1) {
-
-    remainingPoints[0] = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, UNPROCESSED);
+    remainingPoints[0] = DATASET_COUNT;
     gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], remainingPoints[0]);
-
-    if (remainingPoints[0] == 0) {
-      break;
-    }
-
     gpuErrchk(cudaMemcpy(d_remainingPoints, remainingPoints, sizeof(int), cudaMemcpyHostToDevice));
 
     // Kernel function to expand the seed list
@@ -409,13 +400,8 @@ int main(int argc, char **argv) {
     DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth);
-    
+        d_dataValue, d_upperBounds, d_binWidth, d_runningCluster, d_clusterMap, d_clusterCountMap, d_remainingPoints);
     gpuErrchk(cudaDeviceSynchronize());
-    COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_remainingPoints);
-    gpuErrchk(cudaDeviceSynchronize());
-  }
 
   /**
  **************************************************************************

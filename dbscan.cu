@@ -441,7 +441,8 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth) {
+                                    double *upperBounds, double *binWidth, int *runningCluster,
+                                    int *clusterMap, int*clusterCountMap, int * remainingPoints) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -462,6 +463,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
   __shared__ int resultId;
 
+  while(remainingPoints[0] > 0) {
   if (threadIdx.x == 0) {
     chainID = blockIdx.x;
     currentSeedLength = seedLength[chainID];
@@ -573,9 +575,25 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   }
 
   __syncthreads();
+
+
+
+
+  ////////////////////////////////////////////////////////////////////////////////////
+  // ================================================================================
+  ////////////////////////////////////////////////////////////////////////////////////
+
+
+  inspectCollisions(collisionMatrix, extraCollision,cluster, seedList,seedLength, runningCluster,clusterMap,
+    clusterCountMap, remainingPoints);
+
+  __syncthreads();
+
+
+  }
 }
 
-__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
+__device__ void inspectCollisions(int *collisionMatrix, int *extraCollision,
                                     int *cluster, int *seedList,
                                     int *seedLength, int *runningCluster,
                                     int *clusterMap, int*clusterCountMap, int * remainingPoints) {
@@ -729,6 +747,13 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
   }
 
   __syncthreads();
+
+  if(threadIdx.x == 0 && blockIdx.x == 0) {
+    remainingPoints[0] = thrust::count(thrust::device, cluster, cluster + DATASET_COUNT, UNPROCESSED);
+    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], remainingPoints[0]);
+  }
+  __syncthreads();
+
 }
 
 void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
