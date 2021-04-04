@@ -575,13 +575,10 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   __syncthreads();
 }
 
-__device__ int clusterMap[THREAD_BLOCKS];
-__device__ int clusterCountMap[THREAD_BLOCKS];
-
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                     int *cluster, int *seedList,
                                     int *seedLength, int *runningCluster,
-                                    int *processedPoints) {
+                                    int *clusterMap, int*clusterCountMap, int * remainingPoints) {
   if (threadIdx.x == 0) {
     clusterMap[blockIdx.x] = blockIdx.x;
     clusterCountMap[blockIdx.x] = UNPROCESSED;
@@ -715,7 +712,7 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
   }
   __syncthreads();
 
-  for (int x = threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
+  for (int x = remainingPoints[0] + threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
     if (cluster[x] == UNPROCESSED) {
       bool found = false;
       for (int y = 0; y < THREAD_BLOCKS; y++) {
@@ -724,7 +721,6 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
       if (!found) {
         seedList[chainID * MAX_SEEDS] = x;
         seedLength[chainID] = 1;
-        processedPoints[x] = -1;
         break;
       }
       __syncthreads();

@@ -11,18 +11,18 @@ using namespace std;
 #define TREE_LEVELS (DIMENSION + 1)
 
 #define THREAD_BLOCKS 128
-#define THREAD_COUNT 256
+#define THREAD_COUNT 128
 
-#define MAX_SEEDS 256
-#define EXTRA_COLLISION_SIZE 512
+#define MAX_SEEDS 1024
+#define EXTRA_COLLISION_SIZE 128
 
-#define DATASET_COUNT 1864620
-// #define DATASET_COUNT 50000000
+// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 100000
 
 #define MINPTS 4
 #define EPS 1.5
 
-#define PARTITION_SIZE 100
+#define PARTITION_SIZE 60
 #define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -32,10 +32,10 @@ using namespace std;
 #define gpuErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line,
-  bool abort = true) {
+                      bool abort = true) {
   if (code != cudaSuccess) {
     fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
-      line);
+            line);
     if (abort) exit(code);
   }
 }
@@ -46,6 +46,5 @@ struct __align__(8) IndexStructure {
   int dataEnd;
   int childFrom;
 };
-
 
 #endif

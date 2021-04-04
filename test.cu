@@ -87,6 +87,8 @@ int main(int argc, char **argv) {
   int *d_seedLength;
   int *d_collisionMatrix;
   int *d_extraCollision;
+  int *d_clusterMap;
+  int *d_clusterCountMap;
 
   gpuErrchk(cudaMalloc((void **)&d_dataset,
                        sizeof(double) * DATASET_COUNT * DIMENSION));
@@ -104,6 +106,9 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_extraCollision,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
+  gpuErrchk(cudaMalloc((void **)&d_clusterMap, sizeof(int) * THREAD_BLOCKS));
+  gpuErrchk(cudaMalloc((void **)&d_clusterCountMap, sizeof(int) * THREAD_BLOCKS));
+
   /**
  **************************************************************************
  * Indexing Memory allocation
@@ -116,7 +121,6 @@ int main(int argc, char **argv) {
   int *d_results;
   double *d_minPoints;
   double *d_binWidth;
-  int *d_processedPoints;
 
   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData,
                        sizeof(int) * TREE_LEVELS * RANGE));
@@ -130,8 +134,6 @@ int main(int argc, char **argv) {
 
   gpuErrchk(
       cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
-
-  gpuErrchk(cudaMalloc((void **)&d_processedPoints, sizeof(int) * DATASET_COUNT));
 
   /**
  **************************************************************************
@@ -156,7 +158,9 @@ int main(int argc, char **argv) {
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
 
-  thrust::fill(thrust::device, d_processedPoints, d_processedPoints + DATASET_COUNT, 0);
+  gpuErrchk(cudaMemset(d_clusterMap, -1, sizeof(int) * THREAD_BLOCKS));
+  gpuErrchk(cudaMemset(d_clusterCountMap, -1, sizeof(int) * THREAD_BLOCKS));
+  
 
   int *localSeedList;
   localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
@@ -375,6 +379,11 @@ int main(int argc, char **argv) {
   int *d_runningCluster;
   gpuErrchk(cudaMalloc((void **)&d_runningCluster, sizeof(int)));
   gpuErrchk(cudaMemcpy(d_runningCluster, runningCluster, sizeof(int), cudaMemcpyHostToDevice));
+  
+  int* remainingPoints = (int*)malloc(sizeof(int));
+  remainingPoints[0] = THREAD_BLOCKS;
+  int *d_remainingPoints;
+  gpuErrchk(cudaMalloc((void **)&d_remainingPoints, sizeof(int)));
 
   // Global cluster count
   int clusterCount = 0;
@@ -385,13 +394,15 @@ int main(int argc, char **argv) {
 
   while (1) {
 
-    int completed = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, -1);
+    remainingPoints[0] = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, UNPROCESSED);
     gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], completed);
+    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], remainingPoints[0]);
 
-    if (completed  == 0) {
+    if (remainingPoints[0] == 0) {
       break;
     }
+
+    gpuErrchk(cudaMemcpy(d_remainingPoints, remainingPoints, sizeof(int), cudaMemcpyHostToDevice));
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
@@ -402,7 +413,7 @@ int main(int argc, char **argv) {
     
     gpuErrchk(cudaDeviceSynchronize());
     COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_processedPoints);
+      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_remainingPoints);
     gpuErrchk(cudaDeviceSynchronize());
   }
 
@@ -445,6 +456,9 @@ int main(int argc, char **argv) {
   cudaFree(d_seedLength);
   cudaFree(d_collisionMatrix);
   cudaFree(d_extraCollision);
+  cudaFree(d_clusterMap);
+  cudaFree(d_clusterCountMap);
+  cudaFree(d_remainingPoints);
 
   cudaFree(d_results);
   cudaFree(d_indexBuckets);

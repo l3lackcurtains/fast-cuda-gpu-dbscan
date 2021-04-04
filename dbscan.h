@@ -35,10 +35,12 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     double *upperBounds, double *binWidth);
 
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
-                                 int *cluster, int *seedList, int *seedLength,
-                                 int *runningCluster, int *processedPoints);
+                                    int *cluster, int *seedList,
+                                    int *seedLength, int *runningCluster,
+                                    int *clusterMap, int *clusterCountMap,
+                                    int *remainingPoints);
 
 void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
-                     int *noiseCount);
+                         int *noiseCount);
 
 #endif
