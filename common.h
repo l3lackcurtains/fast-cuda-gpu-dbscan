@@ -10,8 +10,8 @@ using namespace std;
 #define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
-#define THREAD_BLOCKS 128
-#define THREAD_COUNT 128
+#define THREAD_BLOCKS 256
+#define THREAD_COUNT 256
 
 #define MAX_SEEDS 1024
 #define EXTRA_COLLISION_SIZE 128
