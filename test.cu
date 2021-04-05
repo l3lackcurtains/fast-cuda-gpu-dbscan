@@ -381,10 +381,10 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_runningCluster, sizeof(int)));
   gpuErrchk(cudaMemcpy(d_runningCluster, runningCluster, sizeof(int), cudaMemcpyHostToDevice));
   
-  int* remainingPoints = (int*)malloc(sizeof(int));
-  remainingPoints[0] = DATASET_COUNT - THREAD_BLOCKS;
-  int *d_remainingPoints;
-  gpuErrchk(cudaMalloc((void **)&d_remainingPoints, sizeof(int)));
+  int* processedPoints = (int*)malloc(sizeof(int));
+  processedPoints[0] = THREAD_BLOCKS;
+  int *d_processedPoints;
+  gpuErrchk(cudaMalloc((void **)&d_processedPoints, sizeof(int)));
 
   // Global cluster count
   int clusterCount = 0;
@@ -403,19 +403,18 @@ int main(int argc, char **argv) {
     
     gpuErrchk(cudaDeviceSynchronize());
     COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_remainingPoints);
+      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
     gpuErrchk(cudaDeviceSynchronize());
 
-    remainingPoints[0] = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, UNPROCESSED);
-    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], remainingPoints[0]);
-
-    if (remainingPoints[0] == 0) {
+    gpuErrchk(cudaMemcpy(processedPoints, d_processedPoints, sizeof(int), cudaMemcpyDeviceToHost));
+    
+    if (processedPoints[0] == DATASET_COUNT) {
       break;
     }
-    gpuErrchk(cudaMemcpy(d_remainingPoints, remainingPoints, sizeof(int), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(d_processedPoints, processedPoints, sizeof(int), cudaMemcpyHostToDevice));
   }
 
+  gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
   /**
  **************************************************************************
  * End DBSCAN and show the results
@@ -457,7 +456,7 @@ int main(int argc, char **argv) {
   cudaFree(d_extraCollision);
   cudaFree(d_clusterMap);
   cudaFree(d_clusterCountMap);
-  cudaFree(d_remainingPoints);
+  cudaFree(d_processedPoints);
 
   cudaFree(d_results);
   cudaFree(d_indexBuckets);

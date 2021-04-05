@@ -435,6 +435,21 @@ void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                               d_cluster + DATASET_COUNT, NOISE);
 }
 
+void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
+                         int *noiseCount) {
+  int localClusterCount = 0;
+
+  for (int i = THREAD_BLOCKS; i <= runningCluster[0]; i++) {
+    if (thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) !=
+        d_cluster + DATASET_COUNT) {
+      localClusterCount++;
+    }
+  }
+  *clusterCount = localClusterCount;
+  *noiseCount = thrust::count(thrust::device, d_cluster,
+                              d_cluster + DATASET_COUNT, NOISE);
+}
+
 __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *seedList, int *seedLength,
                                     int *collisionMatrix, int *extraCollision,
@@ -571,14 +586,12 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
     }
     __syncthreads();
   }
-
-  __syncthreads();
 }
 
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                     int *cluster, int *seedList,
                                     int *seedLength, int *runningCluster,
-                                    int *clusterMap, int*clusterCountMap, int * remainingPoints) {
+                                    int *clusterMap, int*clusterCountMap, int * processedPoints) {
   if (threadIdx.x == 0) {
     clusterMap[blockIdx.x] = blockIdx.x;
     clusterCountMap[blockIdx.x] = UNPROCESSED;
@@ -717,7 +730,7 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
   __syncthreads();
 
   if(threadIdx.x == 0 && blockIdx.x == 0) {
-    int found = 0
+    int found = processedPoints[0];
     ;
     for(int i = 0; i < THREAD_BLOCKS; i++) {
       for (int x = found; x < DATASET_COUNT; x++) {
@@ -729,22 +742,18 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
         }
       }
     }
+    
+    if(found == processedPoints[0]){
+      processedPoints[0] = DATASET_COUNT;
+    } else {
+      processedPoints[0] = found;
+    }
   }
 
   __syncthreads();
-}
 
-void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
-                         int *noiseCount) {
-  int localClusterCount = 0;
-
-  for (int i = THREAD_BLOCKS; i <= runningCluster[0]; i++) {
-    if (thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) !=
-        d_cluster + DATASET_COUNT) {
-      localClusterCount++;
-    }
+  if(blockIdx.x == 0 && threadIdx.x == 0) {
+    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
   }
-  *clusterCount = localClusterCount;
-  *noiseCount = thrust::count(thrust::device, d_cluster,
-                              d_cluster + DATASET_COUNT, NOISE);
 }
+
