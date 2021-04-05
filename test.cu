@@ -385,6 +385,7 @@ int main(int argc, char **argv) {
   processedPoints[0] = THREAD_BLOCKS;
   int *d_processedPoints;
   gpuErrchk(cudaMalloc((void **)&d_processedPoints, sizeof(int)));
+  gpuErrchk(cudaMemcpy(d_processedPoints, processedPoints, sizeof(int), cudaMemcpyHostToDevice));
 
   // Global cluster count
   int clusterCount = 0;
@@ -399,8 +400,7 @@ int main(int argc, char **argv) {
     DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth);
-    
+        d_dataValue, d_upperBounds, d_binWidth, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
     gpuErrchk(cudaDeviceSynchronize());
     COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
       d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
@@ -411,7 +411,7 @@ int main(int argc, char **argv) {
     if (processedPoints[0] == DATASET_COUNT) {
       break;
     }
-    gpuErrchk(cudaMemcpy(d_processedPoints, processedPoints, sizeof(int), cudaMemcpyHostToDevice));
+    
   }
 
   gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
