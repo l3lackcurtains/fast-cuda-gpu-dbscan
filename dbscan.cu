@@ -441,8 +441,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth, int *runningCluster,
-                                    int *clusterMap, int*clusterCountMap, int * remainingPoints) {
+                                    double *upperBounds, double *binWidth) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -463,7 +462,6 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
   __shared__ int resultId;
 
-  while(remainingPoints[0] > 0) {
   if (threadIdx.x == 0) {
     chainID = blockIdx.x;
     currentSeedLength = seedLength[chainID];
@@ -575,25 +573,9 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
   }
 
   __syncthreads();
-
-
-
-
-  ////////////////////////////////////////////////////////////////////////////////////
-  // ================================================================================
-  ////////////////////////////////////////////////////////////////////////////////////
-
-
-  inspectCollisions(collisionMatrix, extraCollision,cluster, seedList,seedLength, runningCluster,clusterMap,
-    clusterCountMap, remainingPoints);
-
-  __syncthreads();
-
-
-  }
 }
 
-__device__ void inspectCollisions(int *collisionMatrix, int *extraCollision,
+__global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
                                     int *cluster, int *seedList,
                                     int *seedLength, int *runningCluster,
                                     int *clusterMap, int*clusterCountMap, int * remainingPoints) {
@@ -726,34 +708,30 @@ __device__ void inspectCollisions(int *collisionMatrix, int *extraCollision,
 
   if (threadIdx.x == 0) {
     chainID = blockIdx.x;
-    seedList[chainID * MAX_SEEDS] = UNPROCESSED;
   }
   __syncthreads();
 
-  for (int x = remainingPoints[0] + threadIdx.x; x < DATASET_COUNT; x = x + THREAD_COUNT) {
-    if (cluster[x] == UNPROCESSED) {
-      bool found = false;
-      for (int y = 0; y < THREAD_BLOCKS; y++) {
-        if (seedList[y * MAX_SEEDS] == x) found = true;
-      }
-      if (!found) {
-        seedList[chainID * MAX_SEEDS] = x;
-        seedLength[chainID] = 1;
-        break;
-      }
-      __syncthreads();
-    }
-    __syncthreads();
+  for(int x = threadIdx.x; x < MAX_SEEDS; x = x + THREAD_COUNT) {
+    atomicCAS(&seedList[chainID * MAX_SEEDS + x], seedList[chainID * MAX_SEEDS + x], UNPROCESSED);
   }
-
   __syncthreads();
 
   if(threadIdx.x == 0 && blockIdx.x == 0) {
-    remainingPoints[0] = thrust::count(thrust::device, cluster, cluster + DATASET_COUNT, UNPROCESSED);
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], remainingPoints[0]);
+    int found = 0
+    ;
+    for(int i = 0; i < THREAD_BLOCKS; i++) {
+      for (int x = found; x < DATASET_COUNT; x++) {
+        if (cluster[x] == UNPROCESSED) {
+          found = x + 1;
+          seedList[i * MAX_SEEDS] = x;
+          seedLength[i] = 1;
+          break;
+        }
+      }
+    }
   }
-  __syncthreads();
 
+  __syncthreads();
 }
 
 void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
