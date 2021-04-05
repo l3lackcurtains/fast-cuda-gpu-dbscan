@@ -676,11 +676,8 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
 
   }
   __syncthreads();
-
   
 }
-
-
 
 __global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
   int *cluster, int *seedList,
@@ -707,18 +704,16 @@ __global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
     if (extraCollision[chainID * EXTRA_COLLISION_SIZE + y] != UNPROCESSED) {
       for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
         if (extraCollision[chainID * EXTRA_COLLISION_SIZE + y] == cluster[i])
-          atomicCAS(&cluster[i], cluster[i], extraCollision[chainID * EXTRA_COLLISION_SIZE]);
+          cluster[i] = extraCollision[chainID * EXTRA_COLLISION_SIZE];
         if (y == 0 && cluster[i] == clusterCountMap[clusterMap[chainID]])
-          atomicCAS(&cluster[i], cluster[i], extraCollision[chainID * EXTRA_COLLISION_SIZE]);
+          cluster[i] = extraCollision[chainID * EXTRA_COLLISION_SIZE];
       }
-      __syncthreads();
     }
-    __syncthreads();
   }
   __syncthreads();
 
-  for(int x = threadIdx.x; x < MAX_SEEDS; x = x + THREAD_COUNT) {
-    atomicCAS(&seedList[chainID * MAX_SEEDS + x], seedList[chainID * MAX_SEEDS + x], UNPROCESSED);
+  if(threadIdx.x == 0) {
+    seedList[chainID * MAX_SEEDS] = UNPROCESSED;
   }
   __syncthreads();
 
@@ -741,12 +736,10 @@ __global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
       processedPoints[0] = found;
     }
   }
-
   __syncthreads();
+  
 
   if(blockIdx.x == 0 && threadIdx.x == 0) {
-    // printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
+    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
   }
-
-
-  }
+}
