@@ -406,6 +406,10 @@ int main(int argc, char **argv) {
       d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
     gpuErrchk(cudaDeviceSynchronize());
 
+    COLLISION_MERGE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
+      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
+    gpuErrchk(cudaDeviceSynchronize());
+
     gpuErrchk(cudaMemcpy(processedPoints, d_processedPoints, sizeof(int), cudaMemcpyDeviceToHost));
     
     if (processedPoints[0] == DATASET_COUNT) {

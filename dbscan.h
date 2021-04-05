@@ -41,6 +41,11 @@ __global__ void COLLISION_DETECTION(int* collisionMatrix, int* extraCollision,
     int* clusterMap, int* clusterCountMap,
     int* processedPoints);
 
+__global__ void COLLISION_MERGE(int* collisionMatrix, int* extraCollision,
+    int* cluster, int* seedList,
+    int* seedLength, int* runningCluster,
+    int* clusterMap, int* clusterCountMap, int* processedPoints);
+
 void TestGetDbscanResult(int* d_cluster, int* runningCluster, int* clusterCount,
     int* noiseCount);
 

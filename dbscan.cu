@@ -422,32 +422,25 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
 
 void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                      int *noiseCount) {
-  int localClusterCount = 0;
-
-  for (int i = THREAD_BLOCKS; i <= (*runningCluster); i++) {
-    if (thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) !=
-        d_cluster + DATASET_COUNT) {
-      localClusterCount++;
-    }
-  }
-  *clusterCount = localClusterCount;
-  *noiseCount = thrust::count(thrust::device, d_cluster,
-                              d_cluster + DATASET_COUNT, NOISE);
+  *noiseCount = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, NOISE);
+  int *d_localCluster;
+  gpuErrchk(cudaMalloc((void **)&d_localCluster, sizeof(int) * DATASET_COUNT));
+  thrust::copy(thrust::device, d_cluster, d_cluster + DATASET_COUNT, d_localCluster);
+  thrust::sort(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT);
+  *clusterCount = thrust::unique(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT) - d_localCluster - 1;
+  cudaFree(d_localCluster);
 }
 
 void TestGetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                          int *noiseCount) {
-  int localClusterCount = 0;
+  *noiseCount = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, NOISE);
+  int *d_localCluster;
+  gpuErrchk(cudaMalloc((void **)&d_localCluster, sizeof(int) * DATASET_COUNT));
+  thrust::copy(thrust::device, d_cluster, d_cluster + DATASET_COUNT, d_localCluster);
+  thrust::sort(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT);
+  *clusterCount = thrust::unique(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT) - d_localCluster - 1;
+  cudaFree(d_localCluster);
 
-  for (int i = THREAD_BLOCKS; i <= runningCluster[0]; i++) {
-    if (thrust::find(thrust::device, d_cluster, d_cluster + DATASET_COUNT, i) !=
-        d_cluster + DATASET_COUNT) {
-      localClusterCount++;
-    }
-  }
-  *clusterCount = localClusterCount;
-  *noiseCount = thrust::count(thrust::device, d_cluster,
-                              d_cluster + DATASET_COUNT, NOISE);
 }
 
 __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
@@ -478,12 +471,6 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
   __shared__ int resultId;
 
-  if (threadIdx.x == 0) {
-    chainID = blockIdx.x;
-    currentSeedLength = seedLength[chainID];
-    pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
-  }
-  __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
@@ -494,10 +481,12 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
        x = x + THREAD_BLOCKS * THREAD_COUNT) {
     extraCollision[x] = UNPROCESSED;
   }
-
   __syncthreads();
 
-  // Complete the seedlist to proceed.
+  if (threadIdx.x == 0) {
+    chainID = blockIdx.x;
+  }
+  __syncthreads();
 
   while (seedLength[chainID] != 0) {
     for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
@@ -508,7 +497,6 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
     // Assign chainID, current seed length and pointID
     if (threadIdx.x == 0) {
-      chainID = blockIdx.x;
       currentSeedLength = seedLength[chainID];
       pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
     }
@@ -685,22 +673,33 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
       }
     }
     __syncthreads();
-    
-
-    for (int i = threadIdx.x; i < DATASET_COUNT; i = i + THREAD_COUNT) {
-      if (cluster[i] >= 0 && cluster[i] < THREAD_BLOCKS) {
-        cluster[i] = clusterCountMap[clusterMap[cluster[i]]];
-      }
-    }
-    __syncthreads();
 
   }
   __syncthreads();
+
+  
+}
+
+
+
+__global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
+  int *cluster, int *seedList,
+  int *seedLength, int *runningCluster,
+  int *clusterMap, int*clusterCountMap, int * processedPoints) {
 
   __shared__ int chainID;
 
   if (threadIdx.x == 0) {
     chainID = blockIdx.x;
+  }
+  __syncthreads();
+  
+
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = threadId; i < DATASET_COUNT; i = i + THREAD_BLOCKS * THREAD_COUNT) {
+    if (cluster[i] >= 0 && cluster[i] < THREAD_BLOCKS) {
+      cluster[i] = clusterCountMap[clusterMap[cluster[i]]];
+    }
   }
   __syncthreads();
 
@@ -717,8 +716,6 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
     __syncthreads();
   }
   __syncthreads();
-
-  
 
   for(int x = threadIdx.x; x < MAX_SEEDS; x = x + THREAD_COUNT) {
     atomicCAS(&seedList[chainID * MAX_SEEDS + x], seedList[chainID * MAX_SEEDS + x], UNPROCESSED);
@@ -748,7 +745,8 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
   __syncthreads();
 
   if(blockIdx.x == 0 && threadIdx.x == 0) {
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
+    // printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
   }
-}
 
+
+  }
