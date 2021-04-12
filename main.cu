@@ -337,8 +337,6 @@ int main(int argc, char **argv) {
 
   // Keep track of number of cluster formed without global merge
   int runningCluster = THREAD_BLOCKS;
-  map<int, set<int>> collisionUnion;
-
   // Global cluster count
   int clusterCount = 0;
 
@@ -351,7 +349,7 @@ int main(int argc, char **argv) {
   while (!exit) {
     // Monitor the seed list and return the comptetion status of points
     int completed =
-        MonitorSeedPoints(unprocessedPoints, collisionUnion, &runningCluster,
+        MonitorSeedPoints(unprocessedPoints, &runningCluster,
                           d_cluster, d_seedList, d_seedLength,
                           d_collisionMatrix, d_extraCollision, d_results);
 

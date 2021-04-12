@@ -158,8 +158,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   }
 }
 
-bool MonitorSeedPoints(vector<int> &unprocessedPoints,
-                       map<int, set<int>> &collisionUnion, int *runningCluster,
+bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
                        int *d_results) {
@@ -449,8 +448,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
                                     int *results,
                                     struct IndexStructure **indexBuckets,
                                     int *indexesStack, int *dataValue,
-                                    double *upperBounds, double *binWidth, int *runningCluster,
-                                    int *clusterMap, int*clusterCountMap, int * processedPoints) {
+                                    double *upperBounds, double *binWidth) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -580,9 +578,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
 
 __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
-                                    int *cluster, int *seedList,
-                                    int *seedLength, int *runningCluster,
-                                    int *clusterMap, int*clusterCountMap, int * processedPoints) {
+                                    int *cluster, int *clusterMap, int*clusterCountMap, int* runningCluster) {
   if (threadIdx.x == 0) {
     clusterMap[blockIdx.x] = blockIdx.x;
     clusterCountMap[blockIdx.x] = UNPROCESSED;
@@ -680,9 +676,7 @@ __global__ void COLLISION_DETECTION(int *collisionMatrix, int *extraCollision,
 }
 
 __global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
-  int *cluster, int *seedList,
-  int *seedLength, int *runningCluster,
-  int *clusterMap, int*clusterCountMap, int * processedPoints) {
+  int *cluster,  int *clusterMap, int*clusterCountMap) {
 
   __shared__ int chainID;
 
@@ -711,35 +705,95 @@ __global__ void COLLISION_MERGE(int *collisionMatrix, int *extraCollision,
     }
   }
   __syncthreads();
+}
 
-  if(threadIdx.x == 0) {
-    seedList[chainID * MAX_SEEDS] = UNPROCESSED;
-  }
-  __syncthreads();
 
-  if(threadIdx.x == 0 && blockIdx.x == 0) {
-    int found = processedPoints[0];
-    for(int i = 0; i < THREAD_BLOCKS; i++) {
-      for (int x = found; x < DATASET_COUNT; x++) {
-        if (cluster[x] == UNPROCESSED) {
-          found = x + 1;
-          seedList[i * MAX_SEEDS] = x;
-          seedLength[i] = 1;
-          break;
-        }
-      }
-    }
-    
-    if(found == processedPoints[0]){
-      processedPoints[0] = DATASET_COUNT;
-    } else {
-      processedPoints[0] = found;
+bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
+                       int *d_cluster, int *d_seedList, int *d_seedLength,
+                       int *d_collisionMatrix, int *d_extraCollision,
+                       int *d_results, int *d_clusterMap, int *d_clusterCountMap, int* d_runningCluster) {
+  int *localSeedLength;
+  localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
+  gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
+                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
+
+  int *localSeedList;
+  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
+  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
+                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                       cudaMemcpyDeviceToHost));
+
+
+  int completeSeedListFirst = false;
+  for (int i = 0; i < THREAD_BLOCKS; i++) {
+    if (localSeedLength[i] > 0) {
+      completeSeedListFirst = true;
     }
   }
-  __syncthreads();
+  if (completeSeedListFirst) {
+    free(localSeedList);
+    free(localSeedLength);
+    return false;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////
+
+  gpuErrchk(cudaDeviceSynchronize());
+  COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
+    d_cluster, d_clusterMap, d_clusterCountMap, d_runningCluster);
+  gpuErrchk(cudaDeviceSynchronize());
+
+  COLLISION_MERGE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
+    d_cluster, d_clusterMap, d_clusterCountMap);
+  gpuErrchk(cudaDeviceSynchronize());
+
+  //////////////////////////////////////////////////////////////////////////////////////////
+  int* d_datasetSequence;
+  gpuErrchk(cudaMalloc((void **)&d_datasetSequence, sizeof(int) * DATASET_COUNT));
+  int *d_tempCluster;
+  gpuErrchk(cudaMalloc((void **)&d_tempCluster, sizeof(int) * DATASET_COUNT));
+
+  thrust::sequence(thrust::device, d_datasetSequence, d_datasetSequence + DATASET_COUNT);
+  thrust::copy(thrust::device, d_cluster, d_cluster + DATASET_COUNT, d_tempCluster);
+  thrust::sort_by_key(thrust::device, d_tempCluster, d_tempCluster + DATASET_COUNT, d_datasetSequence);
+
+  thrust::pair<int *, int *> dataPositioned;
+  dataPositioned = thrust::equal_range(thrust::device, d_tempCluster, d_tempCluster + DATASET_COUNT, UNPROCESSED);
+  int first = dataPositioned.first - d_tempCluster;
+  int last = dataPositioned.second  - d_tempCluster;
   
-
-  if(blockIdx.x == 0 && threadIdx.x == 0) {
-    printf("Running cluster %d, Remaining points: %d\n", runningCluster[0], DATASET_COUNT - processedPoints[0]);
+  int* datasetSequence = (int*)malloc(sizeof(int) * DATASET_COUNT);
+  gpuErrchk(cudaMemcpy(datasetSequence, d_datasetSequence, sizeof(int) * DATASET_COUNT, cudaMemcpyDeviceToHost));
+  
+  int blockCount = 0;
+  for(int x = first; x < last; x++) {
+    if(blockCount > THREAD_BLOCKS) break;
+    localSeedList[blockCount * MAX_SEEDS] = datasetSequence[x];
+    localSeedLength[blockCount] = 1;
+    blockCount++;
   }
+
+  cudaFree(d_datasetSequence);
+  cudaFree(d_tempCluster);
+  free(datasetSequence);
+
+  //////////////////////////////////////////////////////////////////////////////////////////
+
+  // Finally, transfer back the CPU memory to GPU and run DBSCAN process
+
+  gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
+                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
+                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                       cudaMemcpyHostToDevice));
+
+  // Free CPU memories
+  free(localSeedList);
+  free(localSeedLength);
+
+  if(first == last) {
+    return true;
+  }
+
+  return false;
 }

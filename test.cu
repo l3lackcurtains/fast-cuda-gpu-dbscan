@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
   int *d_extraCollision;
   int *d_clusterMap;
   int *d_clusterCountMap;
-
+ 
   gpuErrchk(cudaMalloc((void **)&d_dataset,
                        sizeof(double) * DATASET_COUNT * DIMENSION));
 
@@ -108,6 +108,7 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMalloc((void **)&d_clusterMap, sizeof(int) * THREAD_BLOCKS));
   gpuErrchk(cudaMalloc((void **)&d_clusterCountMap, sizeof(int) * THREAD_BLOCKS));
+  
 
   /**
  **************************************************************************
@@ -157,37 +158,8 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMemset(d_extraCollision, -1,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
-
   gpuErrchk(cudaMemset(d_clusterMap, -1, sizeof(int) * THREAD_BLOCKS));
   gpuErrchk(cudaMemset(d_clusterCountMap, -1, sizeof(int) * THREAD_BLOCKS));
-  
-
-  int *localSeedList;
-  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
-  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
-                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                       cudaMemcpyDeviceToHost));
-
-  int *localSeedLength;
-  localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
-  gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
-                      sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
-
-  gpuErrchk(cudaMemset(d_seedList, UNPROCESSED, sizeof(int) * THREAD_BLOCKS * MAX_SEEDS));
-  for(int x = 0; x < THREAD_BLOCKS; x++) {
-    localSeedList[x * MAX_SEEDS] = x;
-    localSeedLength[x] = 1;
-  }
-
-  gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
-    sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
-      sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-      cudaMemcpyHostToDevice));
-  
-  free(localSeedList);
-  free(localSeedLength);
 
   /**
 **************************************************************************
@@ -331,7 +303,6 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_upperBounds,
                        sizeof(double) * indexedStructureSize));
-  
   /**
  **************************************************************************
  * Start Indexing first
@@ -380,45 +351,40 @@ int main(int argc, char **argv) {
   int *d_runningCluster;
   gpuErrchk(cudaMalloc((void **)&d_runningCluster, sizeof(int)));
   gpuErrchk(cudaMemcpy(d_runningCluster, runningCluster, sizeof(int), cudaMemcpyHostToDevice));
-  
-  int* processedPoints = (int*)malloc(sizeof(int));
-  processedPoints[0] = THREAD_BLOCKS;
-  int *d_processedPoints;
-  gpuErrchk(cudaMalloc((void **)&d_processedPoints, sizeof(int)));
-  gpuErrchk(cudaMemcpy(d_processedPoints, processedPoints, sizeof(int), cudaMemcpyHostToDevice));
-
   // Global cluster count
   int clusterCount = 0;
 
   // Keeps track of number of noises
   int noiseCount = 0;
 
+  // Handler to conmtrol the while loop
+  bool exit = false;
 
-  while (1) {
+  while (!exit) {
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-        d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
-        d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
-    gpuErrchk(cudaDeviceSynchronize());
-    COLLISION_DETECTION<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
+      d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
+      d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
+      d_dataValue, d_upperBounds, d_binWidth);
     gpuErrchk(cudaDeviceSynchronize());
 
-    COLLISION_MERGE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(d_collisionMatrix, d_extraCollision,
-      d_cluster, d_seedList, d_seedLength, d_runningCluster, d_clusterMap, d_clusterCountMap, d_processedPoints);
-    gpuErrchk(cudaDeviceSynchronize());
+    // Monitor the seed list and return the comptetion status of points
+    int completed =
+        TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength,
+                          d_collisionMatrix, d_extraCollision, d_results, d_clusterMap, d_clusterCountMap, d_runningCluster);
+    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));     
+    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster[0],
+        unprocessedPoints.size());
 
-    gpuErrchk(cudaMemcpy(processedPoints, d_processedPoints, sizeof(int), cudaMemcpyDeviceToHost));
-    
-    if (processedPoints[0] == DATASET_COUNT) {
-      break;
+    // If all points are processed, exit
+    if (completed) {
+      exit = true;
     }
-    
+
+    if (exit) break;
   }
 
-  gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));
   /**
  **************************************************************************
  * End DBSCAN and show the results
@@ -429,10 +395,10 @@ int main(int argc, char **argv) {
   printf("==============================================\n");
 
   printf("DBSCAN completed. Calculating clusters...\n");
-
+  
   // Get the DBSCAN result
   TestGetDbscanResult(d_cluster, runningCluster, &clusterCount, &noiseCount);
-
+  
   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 
@@ -450,17 +416,12 @@ int main(int argc, char **argv) {
  **************************************************************************
  */
 
-  free(runningCluster);
-
   cudaFree(d_dataset);
   cudaFree(d_cluster);
   cudaFree(d_seedList);
   cudaFree(d_seedLength);
   cudaFree(d_collisionMatrix);
   cudaFree(d_extraCollision);
-  cudaFree(d_clusterMap);
-  cudaFree(d_clusterCountMap);
-  cudaFree(d_processedPoints);
 
   cudaFree(d_results);
   cudaFree(d_indexBuckets);
@@ -470,7 +431,6 @@ int main(int argc, char **argv) {
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
-  cudaFree(d_runningCluster);
 }
 
 /**
