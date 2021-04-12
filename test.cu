@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
   }
 
   int childItems[TREE_LEVELS];
-  int startEndIndexes[TREE_LEVELS * RANGE];
+  int indexTreeMetaData[TREE_LEVELS * RANGE];
 
   int mulx = 1;
   for (int k = 0; k < TREE_LEVELS; k++) {
@@ -227,22 +227,22 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < TREE_LEVELS; i++) {
     if (i == 0) {
-      startEndIndexes[i * RANGE + 0] = 0;
-      startEndIndexes[i * RANGE + 1] = 1;
+      indexTreeMetaData[i * RANGE + 0] = 0;
+      indexTreeMetaData[i * RANGE + 1] = 1;
       continue;
     }
-    startEndIndexes[i * RANGE + 0] = startEndIndexes[((i - 1) * RANGE) + 1];
-    startEndIndexes[i * RANGE + 1] = startEndIndexes[i * RANGE + 0];
+    indexTreeMetaData[i * RANGE + 0] = indexTreeMetaData[((i - 1) * RANGE) + 1];
+    indexTreeMetaData[i * RANGE + 1] = indexTreeMetaData[i * RANGE + 0];
     for (int k = 0; k < childItems[i - 1]; k++) {
-      startEndIndexes[i * RANGE + 1] += treeLevelPartition[i];
+      indexTreeMetaData[i * RANGE + 1] += treeLevelPartition[i];
     }
   }
 
   for (int i = 0; i < TREE_LEVELS; i++) {
     printf("#%d ", i);
     printf("Partition: %d ", treeLevelPartition[i]);
-    printf("Range: %d %d\n", startEndIndexes[i * RANGE + 0],
-           startEndIndexes[i * RANGE + 1]);
+    printf("Range: %d %d\n", indexTreeMetaData[i * RANGE + 0],
+           indexTreeMetaData[i * RANGE + 1]);
   }
   printf("==============================================\n");
 
@@ -251,11 +251,11 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMemcpy(d_binWidth, binWidth, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
 
-  gpuErrchk(cudaMemcpy(d_indexTreeMetaData, startEndIndexes,
+  gpuErrchk(cudaMemcpy(d_indexTreeMetaData, indexTreeMetaData,
                        sizeof(int) * TREE_LEVELS * RANGE,
                        cudaMemcpyHostToDevice));
 
-  int indexedStructureSize = startEndIndexes[DIMENSION * RANGE + 1];
+  int indexedStructureSize = indexTreeMetaData[DIMENSION * RANGE + 1];
 
   printf("Index Structure Size: %lf GB.\n",
          (sizeof(struct IndexStructure) * indexedStructureSize) /
@@ -361,6 +361,7 @@ int main(int argc, char **argv) {
   bool exit = false;
 
   while (!exit) {
+
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
@@ -428,6 +429,8 @@ int main(int argc, char **argv) {
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
+
+  free(importedDataset);
 }
 
 /**

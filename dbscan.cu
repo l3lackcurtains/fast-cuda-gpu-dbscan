@@ -15,6 +15,7 @@
 #include <math.h>
 #include <set>
 #include <vector>
+#include <stack> 
 
 #include "common.h"
 #include "indexing.h"
@@ -498,11 +499,13 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
     __syncthreads();
 
     ///////////////////////////////////////////////////////////////////////////////////
-
+    
     searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
-                 dataValue, upperBounds, binWidth);
+      dataValue, upperBounds, binWidth);
 
     __syncthreads();
+
+    ///////////////////////////////////////////////////////////////////////////////////
 
     for (int k = 0; k < POINTS_SEARCHED; k++) {
       if (threadIdx.x == 0) {
@@ -773,11 +776,9 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
     sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
     cudaMemcpyHostToDevice));
 
-  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
-    sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_extraCollision, -1,
-    sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
+  thrust::fill(thrust::device, d_collisionMatrix, d_collisionMatrix + THREAD_BLOCKS * THREAD_BLOCKS, UNPROCESSED);
+  thrust::fill(thrust::device, d_extraCollision, d_extraCollision + THREAD_BLOCKS * EXTRA_COLLISION_SIZE, UNPROCESSED);
 
   // Free CPU memories
   free(localSeedList);
@@ -797,7 +798,63 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
   return false;
 }
 
-void searchFromIndexTree(int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results) {
+void searchFromIndexTree(int *d_cluster, double *d_upperBounds, double* dataset, int *d_seedList, int *d_seedLength, int *d_results, int indexTreeMetaData[TREE_LEVELS * RANGE]) {
+  
+  int *localSeedLength;
+  localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
+  gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
+                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
+
+  int *localSeedList;
+  localSeedList = (int *)malloc(sizeof(int) * THREAD_BLOCKS * MAX_SEEDS);
+  gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
+                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+                       cudaMemcpyDeviceToHost));
+
+  thrust::fill(thrust::device, d_results, d_results + THREAD_BLOCKS * POINTS_SEARCHED, UNPROCESSED);
+  int *results;
+  results = (int *)malloc(sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED);
+  gpuErrchk(cudaMemcpy(results, d_results, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED, cudaMemcpyDeviceToHost));
+  
+  
+  for(int i = 0; i < THREAD_BLOCKS; i++) {
+    stack<int> indexPositions;
+    indexPositions.push(0);
+    int seedPointId = localSeedList[i * MAX_SEEDS + localSeedLength[i] - 1];
+    cout << seedPointId << endl;
+    int pointCount = 0;
+    int dimension = 0;
+    while(!indexPositions.empty()) {
+
+      double searchPoint = dataset[seedPointId * DIMENSION + dimension];
+
+      int current = indexPositions.top();
+      indexPositions.pop();
+      int start = indexTreeMetaData[dimension * RANGE + 1] + (current - indexTreeMetaData[dimension * RANGE + 0]) * PARTITION_SIZE;
+      int end = start + PARTITION_SIZE;
+
+      int pos = thrust::upper_bound(thrust::device, d_upperBounds + start, d_upperBounds + end, searchPoint) - d_upperBounds;
+
+      if(dimension == DIMENSION - 1) {
+        results[i * POINTS_SEARCHED + pointCount++] =  pos;
+        if (pos > start) results[i * POINTS_SEARCHED + pointCount++] =  pos - 1;
+        if(pos < end - 1) results[i * POINTS_SEARCHED + pointCount++] =  pos + 1;
+      } else {
+        indexPositions.push(pos);
+        if (pos > start) indexPositions.push(pos - 1);
+        if(pos < end - 1) indexPositions.push(pos + 1);
+        dimension++;
+      }
+    }
+
+  }
+
+
+  gpuErrchk(cudaMemcpy(d_results, results, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED, cudaMemcpyHostToDevice));
+  free(results);
+  free(localSeedList);
+  free(localSeedLength);
+  
 
 
 }

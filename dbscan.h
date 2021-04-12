@@ -49,4 +49,8 @@ bool TestMonitorSeedPoints(vector<int>& unprocessedPoints, int* d_cluster,
                            int* d_results, int* d_clusterMap,
                            int* d_clusterCountMap, int* d_runningCluster);
 
+void searchFromIndexTree(int* d_cluster, double* d_upperBounds, double* dataset,
+                         int* d_seedList, int* d_seedLength, int* d_results,
+                         int indexTreeMetaData[TREE_LEVELS * RANGE]);
+
 #endif
