@@ -373,9 +373,6 @@ int main(int argc, char **argv) {
     int completed =
         TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength,
                           d_collisionMatrix, d_extraCollision, d_results, d_clusterMap, d_clusterCountMap, d_runningCluster);
-    gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));     
-    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster[0],
-        unprocessedPoints.size());
 
     // If all points are processed, exit
     if (completed) {

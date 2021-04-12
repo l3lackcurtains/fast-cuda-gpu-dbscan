@@ -790,6 +790,13 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
   // Free CPU memories
   free(localSeedList);
   free(localSeedLength);
+  
+  int remaining = last - first;
+  int* runningCluster = (int*)malloc(sizeof(int));
+  gpuErrchk(cudaMemcpy(runningCluster, d_runningCluster, sizeof(int), cudaMemcpyDeviceToHost));     
+  printf("Running cluster %d, Remaining points: %d\n", runningCluster[0],remaining);
+  free(runningCluster);
+
 
   if(first == last) {
     return true;
