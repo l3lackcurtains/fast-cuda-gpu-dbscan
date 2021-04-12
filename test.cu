@@ -361,7 +361,7 @@ int main(int argc, char **argv) {
   bool exit = false;
 
   while (!exit) {
-
+    
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
@@ -429,8 +429,6 @@ int main(int argc, char **argv) {
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
-
-  free(importedDataset);
 }
 
 /**

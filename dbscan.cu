@@ -15,7 +15,6 @@
 #include <math.h>
 #include <set>
 #include <vector>
-#include <stack> 
 
 #include "common.h"
 #include "indexing.h"
@@ -499,13 +498,11 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
     __syncthreads();
 
     ///////////////////////////////////////////////////////////////////////////////////
-    
+
     searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
-      dataValue, upperBounds, binWidth);
+                 dataValue, upperBounds, binWidth);
 
     __syncthreads();
-
-    ///////////////////////////////////////////////////////////////////////////////////
 
     for (int k = 0; k < POINTS_SEARCHED; k++) {
       if (threadIdx.x == 0) {
@@ -778,8 +775,8 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
 
 
   thrust::fill(thrust::device, d_collisionMatrix, d_collisionMatrix + THREAD_BLOCKS * THREAD_BLOCKS, UNPROCESSED);
-  thrust::fill(thrust::device, d_extraCollision, d_extraCollision + THREAD_BLOCKS * EXTRA_COLLISION_SIZE, UNPROCESSED);
 
+  thrust::fill(thrust::device, d_extraCollision, d_extraCollision + THREAD_BLOCKS * EXTRA_COLLISION_SIZE, UNPROCESSED);
   // Free CPU memories
   free(localSeedList);
   free(localSeedLength);
@@ -854,7 +851,5 @@ void searchFromIndexTree(int *d_cluster, double *d_upperBounds, double* dataset,
   free(results);
   free(localSeedList);
   free(localSeedLength);
-  
-
 
 }
