@@ -55,20 +55,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    collisionMatrix[x] = UNPROCESSED;
-  }
-  for (int x = threadId; x < THREAD_BLOCKS * EXTRA_COLLISION_SIZE;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    extraCollision[x] = UNPROCESSED;
-  }
 
-  __syncthreads();
-
-  // Complete the seedlist to proceed.
-
-  while (seedLength[chainID] != 0) {
     for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
          x = x + THREAD_BLOCKS * THREAD_COUNT) {
       results[x] = UNPROCESSED;
@@ -155,7 +142,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
       seedLength[chainID] = MAX_SEEDS - 1;
     }
     __syncthreads();
-  }
+  
 }
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
@@ -779,13 +766,18 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
 
   //////////////////////////////////////////////////////////////////////////////////////////
 
-  // Finally, transfer back the CPU memory to GPU and run DBSCAN process
-
   gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
-                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+    sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
+
   gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
-                       sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                       cudaMemcpyHostToDevice));
+    sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
+    cudaMemcpyHostToDevice));
+
+  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
+    sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
+
+  gpuErrchk(cudaMemset(d_extraCollision, -1,
+    sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   // Free CPU memories
   free(localSeedList);
@@ -803,4 +795,9 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
   }
 
   return false;
+}
+
+void searchFromIndexTree(int *d_cluster, int *d_seedList, int *d_seedLength, int *d_results) {
+
+
 }
