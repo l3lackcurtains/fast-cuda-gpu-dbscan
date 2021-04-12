@@ -55,7 +55,20 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
+       x = x + THREAD_BLOCKS * THREAD_COUNT) {
+    collisionMatrix[x] = UNPROCESSED;
+  }
+  for (int x = threadId; x < THREAD_BLOCKS * EXTRA_COLLISION_SIZE;
+       x = x + THREAD_BLOCKS * THREAD_COUNT) {
+    extraCollision[x] = UNPROCESSED;
+  }
 
+  __syncthreads();
+
+  // Complete the seedlist to proceed.
+
+  while (seedLength[chainID] != 0) {
     for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
          x = x + THREAD_BLOCKS * THREAD_COUNT) {
       results[x] = UNPROCESSED;
@@ -142,7 +155,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
       seedLength[chainID] = MAX_SEEDS - 1;
     }
     __syncthreads();
-  
+  }
 }
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
@@ -456,6 +469,12 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
   __shared__ int resultId;
 
+  if (threadIdx.x == 0) {
+    chainID = blockIdx.x;
+    currentSeedLength = seedLength[chainID];
+    pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
+  }
+  __syncthreads();
 
   int threadId = blockDim.x * blockIdx.x + threadIdx.x;
   for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
@@ -466,12 +485,10 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
        x = x + THREAD_BLOCKS * THREAD_COUNT) {
     extraCollision[x] = UNPROCESSED;
   }
+
   __syncthreads();
 
-  if (threadIdx.x == 0) {
-    chainID = blockIdx.x;
-  }
-  __syncthreads();
+  // Complete the seedlist to proceed.
 
   while (seedLength[chainID] != 0) {
     for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
@@ -482,6 +499,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
 
     // Assign chainID, current seed length and pointID
     if (threadIdx.x == 0) {
+      chainID = blockIdx.x;
       currentSeedLength = seedLength[chainID];
       pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
     }
@@ -560,6 +578,7 @@ __global__ void DBSCAN_ONE_INSTANCE(double *dataset, int *cluster,
     }
     __syncthreads();
   }
+  
 }
 
 
@@ -709,19 +728,6 @@ bool TestMonitorSeedPoints(vector<int> &unprocessedPoints,
   gpuErrchk(cudaMemcpy(localSeedList, d_seedList,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyDeviceToHost));
-
-
-  int completeSeedListFirst = false;
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    if (localSeedLength[i] > 0) {
-      completeSeedListFirst = true;
-    }
-  }
-  if (completeSeedListFirst) {
-    free(localSeedList);
-    free(localSeedLength);
-    return false;
-  }
 
   //////////////////////////////////////////////////////////////////////////////////////////
 
