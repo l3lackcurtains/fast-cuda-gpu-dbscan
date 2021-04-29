@@ -1,3 +1,4 @@
+#include <bits/stdc++.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <thrust/device_vector.h>
@@ -12,21 +13,20 @@
 #include <map>
 #include <set>
 #include <vector>
-#include <bits/stdc++.h>
 
 using namespace std;
 
 // Number of data in dataset to use
 
-// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 10000
 
-#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 1864620
 
 // Dimension of the dataset
 #define DIMENSION 2
 
 // Maximum size of seed list
-#define MAX_SEEDS 1024
+#define MAX_SEEDS 128
 
 // Extra collission size to detect final clusters collision
 #define EXTRA_COLLISION_SIZE 128
@@ -35,7 +35,7 @@ using namespace std;
 #define THREAD_BLOCKS 64
 
 // Number of threads per block
-#define THREAD_COUNT 128
+#define THREAD_COUNT 64
 
 // Status of points that are not clusterized
 #define UNPROCESSED -1
@@ -89,7 +89,7 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
 
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                        int *seedLength, int *collisionMatrix,
-                       int *extraCollision, int *neighborsPoints, int * maxSize);
+                       int *extraCollision, int *neighborsPoints, int *maxSize);
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
                                 int *seedList, int *seedLength,
@@ -103,17 +103,20 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 **/
 
 struct IndexStructure {
-    int level;
-    double range[2];
-    struct IndexStructure *buckets[PARTITION];
-    int datas[POINTS_SEARCHED];
+  int level;
+  double range[2];
+  struct IndexStructure *buckets[PARTITION];
+  int datas[POINTS_SEARCHED];
 };
 
-void indexConstruction(double *dataset, struct IndexStructure *indexRoot, int *partition, double minPoints[DIMENSION]);
+void indexConstruction(double *dataset, struct IndexStructure *indexRoot,
+                       int *partition, double minPoints[DIMENSION]);
 
-void insertData(int id, double *data, struct IndexStructure *indexRoot, int *partition);
+void insertData(int id, double *data, struct IndexStructure *indexRoot,
+                int *partition);
 
-void searchPoints(int * results, double *data, struct IndexStructure *indexRoot, int *partition);
+void searchPoints(int *results, double *data, struct IndexStructure *indexRoot,
+                  int *partition);
 
 /**
 **************************************************************************
@@ -228,42 +231,43 @@ int main(int argc, char **argv) {
    **************************************************************************
    */
 
-   indexingStart = clock();
-  
-   struct IndexStructure *indexRoot = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+  indexingStart = clock();
 
-    double maxPoints[DIMENSION];
-    double minPoints[DIMENSION];
+  struct IndexStructure *indexRoot =
+      (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
+  double maxPoints[DIMENSION];
+  double minPoints[DIMENSION];
+
+  for (int j = 0; j < DIMENSION; j++) {
+    maxPoints[j] = 0;
+    minPoints[j] = 999999999;
+  }
+
+  for (int i = 0; i < DATASET_COUNT; i++) {
     for (int j = 0; j < DIMENSION; j++) {
-        maxPoints[j] = 0;
-        minPoints[j] = 999999999;
+      if (importedDataset[i * DIMENSION + j] > maxPoints[j]) {
+        maxPoints[j] = importedDataset[i * DIMENSION + j];
+      }
+      if (importedDataset[i * DIMENSION + j] < minPoints[j]) {
+        minPoints[j] = importedDataset[i * DIMENSION + j];
+      }
     }
+  }
 
-    for (int i = 0; i < DATASET_COUNT; i++) {
-        for (int j = 0; j < DIMENSION; j++) {
-            if (importedDataset[i * DIMENSION + j] > maxPoints[j]) {
-                maxPoints[j] = importedDataset[i * DIMENSION + j];
-            }
-            if (importedDataset[i * DIMENSION + j] < minPoints[j]) {
-                minPoints[j] = importedDataset[i * DIMENSION + j];
-            }
-        }
+  int *partition = (int *)malloc(sizeof(int) * DIMENSION);
+
+  for (int i = 0; i < DIMENSION; i++) {
+    partition[i] = 0;
+    double curr = minPoints[i];
+    while (curr < maxPoints[i]) {
+      partition[i]++;
+      curr += EPS;
     }
+  }
+  indexConstruction(importedDataset, indexRoot, partition, minPoints);
 
-    int *partition = (int *)malloc(sizeof(int) * DIMENSION);
-
-    for (int i = 0; i < DIMENSION; i++) {
-        partition[i] = 0;
-        double curr = minPoints[i];
-        while (curr < maxPoints[i]) {
-            partition[i]++;
-            curr += EPS;
-        }
-    }
-    indexConstruction(importedDataset, indexRoot, partition, minPoints);
-
-    indexingStop = clock();
+  indexingStop = clock();
 
   /**
    **************************************************************************
@@ -295,7 +299,7 @@ int main(int argc, char **argv) {
                                       d_collisionMatrix, d_extraCollision);
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //        unprocessedPoints.size());
-    
+
     // If all points are processed, exit
     if (completed) {
       exit = true;
@@ -314,16 +318,13 @@ int main(int argc, char **argv) {
                          sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                          cudaMemcpyDeviceToHost));
 
-    vector<vector<int>> pointsList(THREAD_BLOCKS, vector<int>());
-
-    int ** results = (int **) malloc(sizeof(int*) * THREAD_BLOCKS);
-    for(int i = 0; i < THREAD_BLOCKS; i++) {
-      results[i]  = (int *) malloc(sizeof(int) * POINTS_SEARCHED);
+    int **results = (int **)malloc(sizeof(int *) * THREAD_BLOCKS);
+    for (int i = 0; i < THREAD_BLOCKS; i++) {
+      results[i] = (int *)malloc(sizeof(int) * POINTS_SEARCHED);
     }
 
     for (int i = 0; i < THREAD_BLOCKS; i++) {
-
-      for(int k = 0; k < POINTS_SEARCHED; k++) {
+      for (int k = 0; k < POINTS_SEARCHED; k++) {
         results[i][k] = -1;
       }
 
@@ -335,15 +336,15 @@ int main(int argc, char **argv) {
       for (int j = 0; j < DIMENSION; j++) {
         searchPoint[j] = importedDataset[seedPointId * DIMENSION + j];
       }
-     
-      searchPoints(results[i], searchPoint, indexRoot, partition);   
+
+      searchPoints(results[i], searchPoint, indexRoot, partition);
     }
 
     int maxSize = 0;
     for (int i = 0; i < THREAD_BLOCKS; i++) {
       int count = 0;
-      for(int j = 0; j < POINTS_SEARCHED; j++) {
-        if(results[i][j] == -1) {
+      for (int j = 0; j < POINTS_SEARCHED; j++) {
+        if (results[i][j] == -1) {
           break;
         }
         count++;
@@ -352,8 +353,7 @@ int main(int argc, char **argv) {
         maxSize = count;
       }
     }
-    
-   
+
     gpuErrchk(
         cudaMemcpy(d_maxSize, &maxSize, sizeof(int), cudaMemcpyHostToDevice));
 
@@ -362,7 +362,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < THREAD_BLOCKS; i++) {
       for (int j = 0; j < maxSize; j++) {
-           h_neighborsPoints[i * maxSize + j] = results[i][j];       
+        h_neighborsPoints[i * maxSize + j] = results[i][j];
       }
     }
 
@@ -376,6 +376,10 @@ int main(int argc, char **argv) {
     free(localSeedList);
     free(localSeedLength);
     free(h_neighborsPoints);
+    for (int i = 0; i < THREAD_BLOCKS; i++) {
+      free(results[i]);
+    }
+    free(results);
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
@@ -383,6 +387,8 @@ int main(int argc, char **argv) {
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_neighborsPoints, d_maxSize);
     gpuErrchk(cudaDeviceSynchronize());
+
+    cudaFree(d_neighborsPoints);
   }
 
   /**
@@ -418,7 +424,7 @@ int main(int argc, char **argv) {
   cudaFree(d_seedLength);
   cudaFree(d_collisionMatrix);
   cudaFree(d_extraCollision);
-  cudaFree(d_neighborsPoints);
+  cudaFree(d_maxSize);
 }
 
 /**
@@ -518,53 +524,27 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
    * between chains and finalize the clusters
    **************************************************************************
    */
-
-  // Define cluster to map the collisions
   map<int, int> clusterMap;
   set<int> blockSet;
-
-  // Insert chains in blockset
   for (int i = 0; i < THREAD_BLOCKS; i++) {
     blockSet.insert(i);
   }
-
   set<int>::iterator it;
-
-  // Iterate through the block set until it's empty
   while (blockSet.empty() == 0) {
-    // Get a chain from blockset
     it = blockSet.begin();
     int curBlock = *it;
-
-    // Expansion Queue is use to see expansion of collision
     set<int> expansionQueue;
-
-    // Final Queue stores mapped chains for blockset chain
     set<int> finalQueue;
-
-    // Insert current chain from blockset to expansion and final queue
     expansionQueue.insert(curBlock);
     finalQueue.insert(curBlock);
 
-    // Iterate through expansion queue until it's empty
     while (expansionQueue.empty() == 0) {
-      // Get first element from expansion queue
       it = expansionQueue.begin();
       int expandBlock = *it;
-
-      // Remove the element because we are about to expand
       expansionQueue.erase(it);
-
-      // Also erase from blockset, because we checked this chain
       blockSet.erase(expandBlock);
-
-      // Loop through chains to see more collisions
       for (int x = 0; x < THREAD_BLOCKS; x++) {
         if (x == expandBlock) continue;
-
-        // If there is collision, insert the chain in finalqueue
-        // Also, insert in expansion queue for further checking
-        // of collision with this chain
         if (localCollisionMatrix[expandBlock * THREAD_BLOCKS + x] == 1 &&
             blockSet.find(x) != blockSet.end()) {
           expansionQueue.insert(x);
@@ -572,8 +552,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
         }
       }
     }
-
-    // Iterate through final queue, and map collided chains with blockset chain
     for (it = finalQueue.begin(); it != finalQueue.end(); ++it) {
       clusterMap[*it] = curBlock;
     }
@@ -605,14 +583,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
       }
     }
   }
-
-  // for (int i = 0; i < THREAD_BLOCKS; i++) {
-  //   printf("%d: ", i);
-  //   for (int j = 0; j < localClusterMerge[i].size(); j++) {
-  //     printf("%d, ", localClusterMerge[i][j]);
-  //   }
-  //   printf("\n");
-  // }
 
   // Check extra collision with cluster ID greater than thread block
   for (int i = 0; i < localClusterMerge.size(); i++) {
@@ -764,25 +734,8 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
   *clusterCount = localClusterCount;
   *noiseCount = localNoiseCount;
 
-  // Output to file
-  ofstream outputFile;
-  outputFile.open("./out/gpu_dbscan_output.txt");
-
-  for (int j = 0; j < DATASET_COUNT; j++) {
-    if (finalClusterMap[localCluster[j]] >= 0) {
-      localCluster[j] = finalClusterMap[localCluster[j]];
-    } else {
-      localCluster[j] = 0;
-    }
-  }
-
-  for (int j = 0; j < DATASET_COUNT; j++) {
-    outputFile << localCluster[j] << endl;
-  }
-
-  outputFile.close();
-
   free(localCluster);
+  free(dataset);
 }
 
 /**
@@ -799,7 +752,8 @@ void GetDbscanResult(double *d_dataset, int *d_cluster, int *runningCluster,
 */
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                        int *seedLength, int *collisionMatrix,
-                       int *extraCollision, int *neighborsPoints, int * maxSize) {
+                       int *extraCollision, int *neighborsPoints,
+                       int *maxSize) {
   /**
    **************************************************************************
    * Define shared variables
@@ -1008,109 +962,120 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
 **************************************************************************
 */
 
-void indexConstruction(double *dataset, struct IndexStructure *indexRoot, int *partition, double minPoints[DIMENSION]) {
-
+void indexConstruction(double *dataset, struct IndexStructure *indexRoot,
+                       int *partition, double minPoints[DIMENSION]) {
   int indexedStructureSize = 0;
-  for(int i = 0; i < DIMENSION; i++) {
+  for (int i = 0; i < DIMENSION; i++) {
     indexedStructureSize += partition[i];
   }
 
-  struct IndexStructure ** indexedStructures = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
+  struct IndexStructure **indexedStructures = (struct IndexStructure **)malloc(
+      sizeof(struct IndexStructure *) * indexedStructureSize);
 
   int indexedStructureSizeCount = 0;
   indexedStructures[indexedStructureSizeCount++] = indexRoot;
 
   for (int j = 0; j < DIMENSION; j++) {
+    struct IndexStructure **childIndexedStructures =
+        (struct IndexStructure **)malloc(sizeof(struct IndexStructure *) *
+                                         indexedStructureSize);
+    int childIndexedStructureSizeCount = 0;
 
-      struct IndexStructure ** childIndexedStructures = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
-      int childIndexedStructureSizeCount = 0;
+    while (indexedStructureSizeCount > 0) {
+      struct IndexStructure *currentIndex =
+          indexedStructures[--indexedStructureSizeCount];
+      currentIndex->level = j;
 
-      while (indexedStructureSizeCount > 0) {
+      double rightPoint = minPoints[j] + partition[j] * EPS;
 
-          struct IndexStructure *currentIndex = indexedStructures[--indexedStructureSizeCount];
-          currentIndex->level = j;
+      for (int k = partition[j] - 1; k >= 0; k--) {
+        struct IndexStructure *currentBucket =
+            (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
-          double rightPoint = minPoints[j] + partition[j] * EPS;
+        currentBucket->range[1] = rightPoint;
+        rightPoint = rightPoint - EPS;
+        currentBucket->range[0] = rightPoint;
 
-          for (int k = partition[j] - 1; k >= 0; k--) {
-              struct IndexStructure *currentBucket = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+        for (int i = 0; i < POINTS_SEARCHED; i++) {
+          currentBucket->datas[i] = -1;
+        }
 
-              currentBucket->range[1] = rightPoint;
-              rightPoint = rightPoint - EPS;
-              currentBucket->range[0] = rightPoint;
-              
-              for (int i = 0; i < POINTS_SEARCHED; i++) {
-                  currentBucket->datas[i] = -1;
-              }
-
-              currentIndex->buckets[k] = currentBucket;
-              if (j < DIMENSION - 1) {
-                  childIndexedStructures[childIndexedStructureSizeCount++] = currentIndex->buckets[k];
-              }
-          }
+        currentIndex->buckets[k] = currentBucket;
+        if (j < DIMENSION - 1) {
+          childIndexedStructures[childIndexedStructureSizeCount++] =
+              currentIndex->buckets[k];
+        }
       }
+    }
 
-      while (childIndexedStructureSizeCount > 0) {
-        indexedStructures[indexedStructureSizeCount++] = childIndexedStructures[--childIndexedStructureSizeCount];
-      }
+    while (childIndexedStructureSizeCount > 0) {
+      indexedStructures[indexedStructureSizeCount++] =
+          childIndexedStructures[--childIndexedStructureSizeCount];
+    }
   }
 
   for (int i = 0; i < DATASET_COUNT; i++) {
-      double *data =
-          (double *)malloc(sizeof(double) * DIMENSION);
-      for (int j = 0; j < DIMENSION; j++) {
-          data[j] = dataset[i * DIMENSION + j];
-      }
-      insertData(i, data, indexRoot, partition);
+    double *data = (double *)malloc(sizeof(double) * DIMENSION);
+    for (int j = 0; j < DIMENSION; j++) {
+      data[j] = dataset[i * DIMENSION + j];
+    }
+    insertData(i, data, indexRoot, partition);
   }
+
+  free(indexedStructures);
 }
 
-void insertData(int id, double *data, struct IndexStructure *indexRoot, int *partition) {
-  
-  struct IndexStructure *currentIndex = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+void insertData(int id, double *data, struct IndexStructure *indexRoot,
+                int *partition) {
+  struct IndexStructure *currentIndex =
+      (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
   currentIndex = indexRoot;
   bool found = false;
 
   while (!found) {
-      int dimension = currentIndex->level;
-      for (int k = 0; k < partition[dimension]; k++) {
-          struct IndexStructure *currentBucket = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
-          currentBucket = currentIndex->buckets[k];
+    int dimension = currentIndex->level;
+    for (int k = 0; k < partition[dimension]; k++) {
+      struct IndexStructure *currentBucket =
+          (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+      currentBucket = currentIndex->buckets[k];
 
-          float comparingData = (float)data[dimension];
-          float leftRange = (float)currentBucket->range[0];
-          float rightRange = (float)currentBucket->range[1];
+      float comparingData = (float)data[dimension];
+      float leftRange = (float)currentBucket->range[0];
+      float rightRange = (float)currentBucket->range[1];
 
-          if (comparingData >= leftRange && comparingData <= rightRange) {
-              if (dimension == DIMENSION - 1) {
-                  for (int i = 0; i < POINTS_SEARCHED; i++) {
-                      if(currentBucket->datas[i] == -1) {
-                          currentBucket->datas[i] = id;
-                          break;
-                      }
-                  }
-                  found = true;
-                  break;
-              }
-              currentIndex = currentBucket;
+      if (comparingData >= leftRange && comparingData <= rightRange) {
+        if (dimension == DIMENSION - 1) {
+          for (int i = 0; i < POINTS_SEARCHED; i++) {
+            if (currentBucket->datas[i] == -1) {
+              currentBucket->datas[i] = id;
               break;
+            }
           }
+          found = true;
+          break;
+        }
+        currentIndex = currentBucket;
+        break;
       }
+    }
   }
 }
 
-void searchPoints(int * results, double *data, struct IndexStructure *indexRoot, int *partition) {
-  struct IndexStructure *currentIndex = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+void searchPoints(int *results, double *data, struct IndexStructure *indexRoot,
+                  int *partition) {
+  struct IndexStructure *currentIndex =
+      (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
   // Size of data Node and index
   int indexedStructureSize = 1;
-  for(int i = 0; i < DIMENSION; i++) {
+  for (int i = 0; i < DIMENSION; i++) {
     indexedStructureSize *= 3;
   }
 
   // Current Index
-  struct IndexStructure ** currentIndexes = (struct IndexStructure**) malloc(sizeof(struct IndexStructure*) * indexedStructureSize);
+  struct IndexStructure **currentIndexes = (struct IndexStructure **)malloc(
+      sizeof(struct IndexStructure *) * indexedStructureSize);
 
   int currentIndexSize = 0;
   currentIndexes[currentIndexSize++] = indexRoot;
@@ -1118,65 +1083,59 @@ void searchPoints(int * results, double *data, struct IndexStructure *indexRoot,
   int resultsCount = 0;
 
   while (currentIndexSize > 0) {
+    currentIndex = currentIndexes[--currentIndexSize];
 
-      currentIndex = currentIndexes[--currentIndexSize];
+    int dimension = currentIndex->level;
 
-      int dimension = currentIndex->level;
+    for (int k = 0; k < partition[dimension]; k++) {
+      struct IndexStructure *currentBucket =
+          (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
 
-      for (int k = 0; k < partition[dimension]; k++) {
+      currentBucket = currentIndex->buckets[k];
 
-          struct IndexStructure *currentBucket = (struct IndexStructure *)malloc(sizeof(struct IndexStructure));
+      float comparingData = (float)data[dimension];
+      float leftRange = (float)currentBucket->range[0];
+      float rightRange = (float)currentBucket->range[1];
 
-          currentBucket = currentIndex->buckets[k];
-
-          float comparingData = (float)data[dimension];
-          float leftRange = (float)currentBucket->range[0];
-          float rightRange = (float)currentBucket->range[1];
-
-          if (comparingData >= leftRange && comparingData <= rightRange) {
-              if (dimension == DIMENSION - 1) {
-                  for (int i = 0; i < POINTS_SEARCHED; i++) {
-                      if (currentBucket->datas[i] == -1) {
-                          break;
-                      }
-                      results[resultsCount++] = currentBucket->datas[i];
-                  }
-
-                  if (k > 0) {
-                      
-                      for (int i = 0; i < POINTS_SEARCHED; i++) {
-                          if (currentIndex->buckets[k - 1]->datas[i] == -1) {
-                              break;
-                          }
-                          results[resultsCount++] = currentIndex->buckets[k - 1]->datas[i];
-                      }
-                  }
-                  if (k < partition[dimension] - 1) {
-                      
-
-                      for (int i = 0; i < POINTS_SEARCHED; i++) {
-                          if (currentIndex->buckets[k + 1]->datas[i] == -1) {
-                              break;
-                          }
-                          results[resultsCount++] = currentIndex->buckets[k + 1]->datas[i];
-                      }
-
-                  }
-                  break;
-              }
-              currentIndexes[currentIndexSize++] = currentBucket;
-              if (k > 0) {
-                  currentIndexes[currentIndexSize++] = currentIndex->buckets[k - 1];
-              }
-              if (k < partition[dimension] - 1) {
-                  currentIndexes[currentIndexSize++] = currentIndex->buckets[k + 1];
-              }
+      if (comparingData >= leftRange && comparingData <= rightRange) {
+        if (dimension == DIMENSION - 1) {
+          for (int i = 0; i < POINTS_SEARCHED; i++) {
+            if (currentBucket->datas[i] == -1) {
               break;
+            }
+            results[resultsCount++] = currentBucket->datas[i];
           }
+
+          if (k > 0) {
+            for (int i = 0; i < POINTS_SEARCHED; i++) {
+              if (currentIndex->buckets[k - 1]->datas[i] == -1) {
+                break;
+              }
+              results[resultsCount++] = currentIndex->buckets[k - 1]->datas[i];
+            }
+          }
+          if (k < partition[dimension] - 1) {
+            for (int i = 0; i < POINTS_SEARCHED; i++) {
+              if (currentIndex->buckets[k + 1]->datas[i] == -1) {
+                break;
+              }
+              results[resultsCount++] = currentIndex->buckets[k + 1]->datas[i];
+            }
+          }
+          break;
+        }
+        currentIndexes[currentIndexSize++] = currentBucket;
+        if (k > 0) {
+          currentIndexes[currentIndexSize++] = currentIndex->buckets[k - 1];
+        }
+        if (k < partition[dimension] - 1) {
+          currentIndexes[currentIndexSize++] = currentIndex->buckets[k + 1];
+        }
+        break;
       }
+    }
   }
 }
-
 
 /**
 **************************************************************************
