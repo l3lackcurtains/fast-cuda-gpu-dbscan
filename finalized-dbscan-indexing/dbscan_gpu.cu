@@ -12,11 +12,11 @@
 using namespace std;
 
 // Number of data in dataset to use
-#define DATASET_COUNT 1864620
-// #define DATASET_COUNT 100000
+// #define DATASET_COUNT 1864620
+#define DATASET_COUNT 2000000
 
 // Dimension of the dataset
-#define DIMENSION 2
+#define DIMENSION 3
 
 // Maximum size of seed list
 #define MAX_SEEDS 128
@@ -25,7 +25,7 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // Number of blocks
-#define THREAD_BLOCKS 128
+#define THREAD_BLOCKS 256
 
 // Number of threads per block
 #define THREAD_COUNT 256
@@ -40,7 +40,7 @@ using namespace std;
 #define MINPTS 4
 
 // Epslion value in DBSCAN
-#define EPS 1.5
+#define EPS 0.5
 
 /**
 **************************************************************************
