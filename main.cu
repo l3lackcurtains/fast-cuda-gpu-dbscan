@@ -346,15 +346,24 @@ int main(int argc, char **argv) {
   // Handler to conmtrol the while loop
   bool exit = false;
 
+  clock_t communicationStart, communicationStop, dbscanKernelStart, dbscanKernelStop;
+  float communicationTime = 0.0;
+  float dbscanKernelTime = 0.0;
+
   while (!exit) {
+
+    communicationStart = clock();
     // Monitor the seed list and return the comptetion status of points
     int completed =
         MonitorSeedPoints(unprocessedPoints, &runningCluster,
                           d_cluster, d_seedList, d_seedLength,
                           d_collisionMatrix, d_extraCollision, d_results);
 
-    printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
-        unprocessedPoints.size());
+    // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
+    //     unprocessedPoints.size());
+
+    communicationStop = clock();
+    communicationTime += (float)(communicationStop - communicationStart) / CLOCKS_PER_SEC;
 
     // If all points are processed, exit
     if (completed) {
@@ -363,6 +372,8 @@ int main(int argc, char **argv) {
 
     if (exit) break;
 
+    dbscanKernelStart = clock();
+
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
@@ -370,6 +381,9 @@ int main(int argc, char **argv) {
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
         d_dataValue, d_upperBounds, d_binWidth);
     gpuErrchk(cudaDeviceSynchronize());
+
+    dbscanKernelStop = clock();
+    dbscanKernelTime += (float)(dbscanKernelStop - dbscanKernelStart) / CLOCKS_PER_SEC;
   }
 
   /**
@@ -394,6 +408,8 @@ int main(int argc, char **argv) {
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
+  printf("Communication Time: %3.2f seconds\n", communicationTime);
+  printf("DBSCAN kernel Time: %3.2f seconds\n", dbscanKernelTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
 
