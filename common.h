@@ -7,7 +7,7 @@ using namespace std;
 #define UNPROCESSED -1
 #define NOISE -2
 
-#define DIMENSION 3
+#define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
 #define THREAD_BLOCKS 256
@@ -17,13 +17,13 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 2000000
+#define DATASET_COUNT 100000
 
 #define MINPTS 4
-#define EPS 0.5
+#define EPS 1.5
 
 #define PARTITION_SIZE 20
-#define POINTS_SEARCHED 27
+#define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
