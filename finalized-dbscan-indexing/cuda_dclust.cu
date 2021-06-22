@@ -25,14 +25,14 @@ using namespace std;
 #define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
-#define THREAD_BLOCKS 256
-#define THREAD_COUNT 256
+#define THREAD_BLOCKS 128
+#define THREAD_COUNT 128
 
-#define MAX_SEEDS 512
-#define REFILL_MAX_SEEDS 1024
+#define MAX_SEEDS 1024
+#define REFILL_MAX_SEEDS 2048
 
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 100000
+#define DATASET_COUNT 10000
 
 #define MINPTS 4
 #define EPS 1.5
