@@ -29,8 +29,6 @@ using namespace std;
 #define THREAD_COUNT 512
 
 #define MAX_SEEDS 1024
-#define REFILL_MAX_SEEDS 1024
-#define EXTRA_COLLISION_SIZE 512
 
 // #define DATASET_COUNT 1864620
 #define DATASET_COUNT 10000
@@ -76,25 +74,22 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 int ImportDataset(char const *fname, double *dataset);
 
 bool MonitorSeedPoints(vector<int>& unprocessedPoints, int* runningCluster,
-                       int* d_cluster, int* d_seedList, int* d_seedLength, int *d_refillSeedList, int *d_refillSeedLength,
-                       int* d_collisionMatrix, int* d_extraCollision,
-                       int* d_results);
+                       int* d_cluster, int* d_seedList, int* d_seedLength,
+                       int* d_collisionMatrix, int* d_results);
 
 void GetDbscanResult(int* d_cluster, int* runningCluster, int* clusterCount,
                      int* noiseCount);
 
 __global__ void DBSCAN(double* dataset, int* cluster, int* seedList,
-                       int* seedLength, int *refillSeedList,
-                       int *refillSeedLength, int* collisionMatrix,
-                       int* extraCollision, int* results,
+                       int* seedLength, int* collisionMatrix,
+                       int* results,
                        struct IndexStructure** indexBuckets,
 
                        int* indexesStack, int* dataValue, double* upperBounds,
                        double* binWidth);
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int* cluster,
-                                int* seedList, int* seedLength, int *refillSeedList, int *refillSeedLength,
-                                int* collisionMatrix, int* extraCollision);
+                                int* seedList, int* seedLength, int* collisionMatrix);
 
 __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
@@ -182,10 +177,7 @@ int main(int argc, char **argv) {
   int *d_cluster;
   int *d_seedList;
   int *d_seedLength;
-  int *d_refillSeedList;
-  int *d_refillSeedLength;
   int *d_collisionMatrix;
-  int *d_extraCollision;
 
   gpuErrchk(cudaMalloc((void **)&d_dataset,
                        sizeof(double) * DATASET_COUNT * DIMENSION));
@@ -197,17 +189,9 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMalloc((void **)&d_seedLength, sizeof(int) * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMalloc((void **)&d_refillSeedList,
-                       sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS));
-
-  gpuErrchk(
-      cudaMalloc((void **)&d_refillSeedLength, sizeof(int) * THREAD_BLOCKS));
-
   gpuErrchk(cudaMalloc((void **)&d_collisionMatrix,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMalloc((void **)&d_extraCollision,
-                       sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   /**
  **************************************************************************
@@ -251,16 +235,8 @@ int main(int argc, char **argv) {
 
   gpuErrchk(cudaMemset(d_seedLength, 0, sizeof(int) * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_refillSeedList, -1,
-    sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS));
-
-  gpuErrchk(cudaMemset(d_refillSeedLength, 0, sizeof(int) * THREAD_BLOCKS));
-
   gpuErrchk(cudaMemset(d_collisionMatrix, -1,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
-
-  gpuErrchk(cudaMemset(d_extraCollision, -1,
-                       sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   /**
 **************************************************************************
@@ -466,8 +442,8 @@ int main(int argc, char **argv) {
     // Monitor the seed list and return the comptetion status of points
     int completed =
         MonitorSeedPoints(unprocessedPoints, &runningCluster,
-                          d_cluster, d_seedList, d_seedLength, d_refillSeedList, d_refillSeedLength,
-                          d_collisionMatrix, d_extraCollision, d_results);
+                          d_cluster, d_seedList, d_seedLength,
+                          d_collisionMatrix, d_results);
 
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //     unprocessedPoints.size());
@@ -487,8 +463,8 @@ int main(int argc, char **argv) {
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-        d_dataset, d_cluster, d_seedList, d_seedLength, d_refillSeedList, d_refillSeedLength, d_collisionMatrix,
-        d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
+        d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
+        d_results, d_indexBuckets, d_indexesStack,
         d_dataValue, d_upperBounds, d_binWidth);
     gpuErrchk(cudaDeviceSynchronize());
 
@@ -534,7 +510,6 @@ int main(int argc, char **argv) {
   cudaFree(d_seedList);
   cudaFree(d_seedLength);
   cudaFree(d_collisionMatrix);
-  cudaFree(d_extraCollision);
 
   cudaFree(d_results);
   cudaFree(d_indexBuckets);
@@ -549,10 +524,10 @@ int main(int argc, char **argv) {
 
 
 __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
-                       int *seedLength, int *refillSeedList,
-                       int *refillSeedLength, int *collisionMatrix,
-                       int *extraCollision, int *results,
+                       int *seedLength, int *collisionMatrix,
+                      int *results,
                        struct IndexStructure **indexBuckets,
+
                        int *indexesStack, int *dataValue, double *upperBounds,
                        double *binWidth) {
   // Point ID to expand by a block
@@ -581,6 +556,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
   }
   __syncthreads();
+
 
     // Check if the point is already processed
     if (threadIdx.x == 0) {
@@ -625,7 +601,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
           register int currentNeighborCount = atomicAdd(&neighborCount, 1);
           if (currentNeighborCount >= MINPTS) {
             MarkAsCandidate(dataValue[i], chainID, cluster, seedList,
-                            seedLength, refillSeedList, refillSeedLength, collisionMatrix, extraCollision);
+                            seedLength, collisionMatrix);
           } else {
             neighborBuffer[currentNeighborCount] = dataValue[i];
           }
@@ -641,7 +617,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
       cluster[pointID] = chainID;
       for (int i = threadIdx.x; i < MINPTS; i = i + THREAD_COUNT) {
         MarkAsCandidate(neighborBuffer[i], chainID, cluster, seedList,
-                        seedLength, refillSeedList, refillSeedLength, collisionMatrix, extraCollision);
+                        seedLength, collisionMatrix);
       }
     } else {
       cluster[pointID] = NOISE;
@@ -650,31 +626,20 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     __syncthreads();
     ///////////////////////////////////////////////////////////////////////////////////
 
-    
     if (threadIdx.x == 0 && seedLength[chainID] >= MAX_SEEDS) {
       seedLength[chainID] = MAX_SEEDS - 1;
-    }
-    __syncthreads();
-
-    if (threadIdx.x == 0 && refillSeedLength[chainID] >= REFILL_MAX_SEEDS) {
-      refillSeedLength[chainID] = REFILL_MAX_SEEDS - 1;
     }
     __syncthreads();
   
 }
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
-                       int *d_cluster, int *d_seedList, int *d_seedLength, int *d_refillSeedList, int *d_refillSeedLength,
-                       int *d_collisionMatrix, int *d_extraCollision,
+                       int *d_cluster, int *d_seedList, int *d_seedLength,
+                       int *d_collisionMatrix,
                        int *d_results) {
   int *localSeedLength;
   localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
   gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
-                       sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
-
-  int *localRefillSeedLength;
-  localRefillSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
-  gpuErrchk(cudaMemcpy(localRefillSeedLength, d_refillSeedLength,
                        sizeof(int) * THREAD_BLOCKS, cudaMemcpyDeviceToHost));
 
   int *localSeedList;
@@ -683,69 +648,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyDeviceToHost));
 
-  int *localRefillSeedList;
-  localRefillSeedList =
-      (int *)malloc(sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS);
-  gpuErrchk(cudaMemcpy(localRefillSeedList, d_refillSeedList,
-                       sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS,
-                       cudaMemcpyDeviceToHost));
-
-
-  gpuErrchk(cudaMemset(d_results, -1,sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
-
-  int completeSeedListFirst = false;
-  int refilled = false;
-
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    if (localSeedLength[i] > 0) {
-      completeSeedListFirst = true;
-      break;
-    }
-    else {
-      if (localRefillSeedLength[i] > 0) {
-        while (localSeedLength[i] < MAX_SEEDS && localRefillSeedLength[i] > 0) {
-          localRefillSeedLength[i] = localRefillSeedLength[i] - 1;
-
-          localSeedList[i * MAX_SEEDS + localSeedLength[i]] =
-              localRefillSeedList[i * REFILL_MAX_SEEDS +
-                                  localRefillSeedLength[i]];
-
-          localSeedLength[i] = localSeedLength[i] + 1;
-        }
-        refilled = true;
-        break;
-      }
-    }
-  }
-
-  if (completeSeedListFirst) {
-    free(localSeedList);
-    free(localSeedLength);
-    free(localRefillSeedList);
-    free(localRefillSeedLength);
-
-    return false;
-  }
-
-  if (refilled) {
-    gpuErrchk(cudaMemcpy(d_seedLength, localSeedLength,
-                         sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
-
-    gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
-                         sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
-                         cudaMemcpyHostToDevice));
-
-    gpuErrchk(cudaMemcpy(d_refillSeedLength, localRefillSeedLength,
-                         sizeof(int) * THREAD_BLOCKS, cudaMemcpyHostToDevice));
-
-    free(localSeedList);
-    free(localSeedLength);
-    free(localRefillSeedList);
-    free(localRefillSeedLength);
-    return false;
-  }
-
-
   int *localCollisionMatrix;
   localCollisionMatrix =
       (int *)malloc(sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS);
@@ -753,13 +655,20 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS,
                        cudaMemcpyDeviceToHost));
 
-  int *localExtraCollision;
-  localExtraCollision =
-      (int *)malloc(sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE);
-  gpuErrchk(cudaMemcpy(localExtraCollision, d_extraCollision,
-                       sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE,
-                       cudaMemcpyDeviceToHost));
+  gpuErrchk(
+      cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
+  int completeSeedListFirst = false;
+  for (int i = 0; i < THREAD_BLOCKS; i++) {
+    if (localSeedLength[i] > 0) {
+      completeSeedListFirst = true;
+    }
+  }
+  if (completeSeedListFirst) {
+    free(localSeedList);
+    free(localSeedLength);
+    return false;
+  }
   ////////////////////////////////////////////////////////////////////////////////////////
 
   int clusterMap[THREAD_BLOCKS];
@@ -815,20 +724,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                     clusterCountMap[clusterMap[x]]);
   }
 
-  for (int x = 0; x < THREAD_BLOCKS; x++) {
-    if (localExtraCollision[x * EXTRA_COLLISION_SIZE] == -1) continue;
-    int minCluster = localExtraCollision[x * EXTRA_COLLISION_SIZE];
-    thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT,
-                    clusterCountMap[clusterMap[x]], minCluster);
-    for (int y = 0; y < EXTRA_COLLISION_SIZE; y++) {
-      if (localExtraCollision[x * EXTRA_COLLISION_SIZE + y] == UNPROCESSED)
-        break;
-      int data = localExtraCollision[x * EXTRA_COLLISION_SIZE + y];
-      thrust::replace(thrust::device, d_cluster, d_cluster + DATASET_COUNT,
-                      data, minCluster);
-    }
-  }
-
   //////////////////////////////////////////////////////////////////////////////////////////
 
   int *localCluster;
@@ -868,17 +763,12 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
   gpuErrchk(cudaMemset(d_collisionMatrix, -1,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
-  gpuErrchk(cudaMemset(d_extraCollision, -1,
-                       sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
   // Free CPU memories
 
   free(localCluster);
   free(localSeedList);
   free(localSeedLength);
-  free(localRefillSeedList);
-  free(localRefillSeedLength);
   free(localCollisionMatrix);
-  free(localExtraCollision);
 
   if (complete == THREAD_BLOCKS) {
     return true;
@@ -888,35 +778,18 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
 }
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
-                                int *seedList, int *seedLength, int *refillSeedList, int *refillSeedLength,
-                                int *collisionMatrix, int *extraCollision) {
+                                int *seedList, int *seedLength,
+                                int *collisionMatrix) {
   register int oldState =
       atomicCAS(&(cluster[neighborID]), UNPROCESSED, chainID);
 
-   if (oldState == UNPROCESSED) {
+  if (oldState == UNPROCESSED) {
     register int sl = atomicAdd(&(seedLength[chainID]), 1);
     if (sl < MAX_SEEDS) {
       seedList[chainID * MAX_SEEDS + sl] = neighborID;
-    } else {
-      register int rsl = atomicAdd(&(refillSeedLength[chainID]), 1);
-      if (rsl < REFILL_MAX_SEEDS) {
-        refillSeedList[chainID * REFILL_MAX_SEEDS + rsl] = neighborID;
-      }
     }
   }
-
-  else if (oldState >= THREAD_BLOCKS) {
-    for (int i = 0; i < EXTRA_COLLISION_SIZE; i++) {
-      register int changedState =
-          atomicCAS(&(extraCollision[chainID * EXTRA_COLLISION_SIZE + i]),
-                    UNPROCESSED, oldState);
-      if (changedState == UNPROCESSED || changedState == oldState) {
-        break;
-      }
-    }
-  }
-
-  else if (oldState != NOISE && oldState != chainID &&
+ else if (oldState != NOISE && oldState != chainID &&
            oldState < THREAD_BLOCKS) {
     collisionMatrix[oldState * THREAD_BLOCKS + chainID] = 1;
     collisionMatrix[chainID * THREAD_BLOCKS + oldState] = 1;
