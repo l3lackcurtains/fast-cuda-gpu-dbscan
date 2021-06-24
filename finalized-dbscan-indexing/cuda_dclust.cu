@@ -582,35 +582,6 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   }
   __syncthreads();
 
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    collisionMatrix[x] = UNPROCESSED;
-  }
-  for (int x = threadId; x < THREAD_BLOCKS * EXTRA_COLLISION_SIZE;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    extraCollision[x] = UNPROCESSED;
-  }
-
-  __syncthreads();
-
-  // Complete the seedlist to proceed.
-
-  while (seedLength[chainID] != 0) {
-    for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
-         x = x + THREAD_BLOCKS * THREAD_COUNT) {
-      results[x] = UNPROCESSED;
-    }
-    __syncthreads();
-
-    // Assign chainID, current seed length and pointID
-    if (threadIdx.x == 0) {
-      chainID = blockIdx.x;
-      currentSeedLength = seedLength[chainID];
-      pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
-    }
-    __syncthreads();
-
     // Check if the point is already processed
     if (threadIdx.x == 0) {
       seedLength[chainID] = currentSeedLength - 1;
@@ -689,7 +660,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
       refillSeedLength[chainID] = REFILL_MAX_SEEDS - 1;
     }
     __syncthreads();
-  }
+  
 }
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
@@ -718,6 +689,9 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
   gpuErrchk(cudaMemcpy(localRefillSeedList, d_refillSeedList,
                        sizeof(int) * THREAD_BLOCKS * REFILL_MAX_SEEDS,
                        cudaMemcpyDeviceToHost));
+
+
+  gpuErrchk(cudaMemset(d_results, -1,sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   int completeSeedListFirst = false;
   int refilled = false;
@@ -891,6 +865,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyHostToDevice));
 
+  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
+                       sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
+
+  gpuErrchk(cudaMemset(d_extraCollision, -1,
+                       sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
   // Free CPU memories
 
   free(localCluster);
