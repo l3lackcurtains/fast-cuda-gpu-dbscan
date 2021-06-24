@@ -27,16 +27,15 @@ using namespace std;
 #define THREAD_BLOCKS 512
 #define THREAD_COUNT 512
 
-#define MAX_SEEDS 2048
-#define EXTRA_COLLISION_SIZE 512
+#define MAX_SEEDS 512
 
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 200000
+#define DATASET_COUNT 1864620
+// #define DATASET_COUNT 200000
 
 #define MINPTS 4
 #define EPS 1.5
 
-#define PARTITION_SIZE 80
+#define PARTITION_SIZE 110
 #define POINTS_SEARCHED 9
 
 /**
