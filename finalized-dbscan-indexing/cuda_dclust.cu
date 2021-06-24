@@ -25,10 +25,10 @@ using namespace std;
 #define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
-#define THREAD_BLOCKS 512
-#define THREAD_COUNT 512
+#define THREAD_BLOCKS 128
+#define THREAD_COUNT 128
 
-#define MAX_SEEDS 1024
+#define MAX_SEEDS 2048
 
 // #define DATASET_COUNT 1864620
 #define DATASET_COUNT 10000
@@ -557,6 +557,30 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   }
   __syncthreads();
 
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
+       x = x + THREAD_BLOCKS * THREAD_COUNT) {
+    collisionMatrix[x] = UNPROCESSED;
+  }
+
+  __syncthreads();
+
+  // Complete the seedlist to proceed.
+
+  while (seedLength[chainID] != 0) {
+    for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
+         x = x + THREAD_BLOCKS * THREAD_COUNT) {
+      results[x] = UNPROCESSED;
+    }
+    __syncthreads();
+
+    // Assign chainID, current seed length and pointID
+    if (threadIdx.x == 0) {
+      chainID = blockIdx.x;
+      currentSeedLength = seedLength[chainID];
+      pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
+    }
+    __syncthreads();
 
     // Check if the point is already processed
     if (threadIdx.x == 0) {
@@ -630,7 +654,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
       seedLength[chainID] = MAX_SEEDS - 1;
     }
     __syncthreads();
-  
+  }
 }
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
@@ -655,20 +679,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS,
                        cudaMemcpyDeviceToHost));
 
-  gpuErrchk(
-      cudaMemset(d_results, -1, sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
-
-  int completeSeedListFirst = false;
-  for (int i = 0; i < THREAD_BLOCKS; i++) {
-    if (localSeedLength[i] > 0) {
-      completeSeedListFirst = true;
-    }
-  }
-  if (completeSeedListFirst) {
-    free(localSeedList);
-    free(localSeedLength);
-    return false;
-  }
   ////////////////////////////////////////////////////////////////////////////////////////
 
   int clusterMap[THREAD_BLOCKS];
@@ -759,9 +769,6 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
   gpuErrchk(cudaMemcpy(d_seedList, localSeedList,
                        sizeof(int) * THREAD_BLOCKS * MAX_SEEDS,
                        cudaMemcpyHostToDevice));
-
-  gpuErrchk(cudaMemset(d_collisionMatrix, -1,
-                       sizeof(int) * THREAD_BLOCKS * THREAD_BLOCKS));
 
   // Free CPU memories
 
