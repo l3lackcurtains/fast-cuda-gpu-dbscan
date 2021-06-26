@@ -33,6 +33,7 @@ int ImportDataset(char const *fname, double *dataset);
 **************************************************************************
 */
 int main(int argc, char **argv) {
+  
   char inputFname[500];
   if (argc != 2) {
     fprintf(stderr, "Please provide the dataset file path in the arguments\n");
@@ -55,7 +56,7 @@ int main(int argc, char **argv) {
 
   // Check if the data parsed is correct
   for (int i = 0; i < DIMENSION; i++) {
-    printf("Sample Data %f\n", importedDataset[i]);
+    printf("Sample Data %lf\n", importedDataset[i]);
   }
 
   // Get the total count of dataset
@@ -294,12 +295,17 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_upperBounds,
                        sizeof(double) * indexedStructureSize));
+
+
+  cudaDeviceSetLimit(cudaLimitMallocHeapSize, 16*1024*1024);
   /**
  **************************************************************************
  * Start Indexing first
  **************************************************************************
  */
   gpuErrchk(cudaDeviceSynchronize());
+
+  
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
       d_dataset, d_indexTreeMetaData, d_minPoints, d_binWidth, d_results,
@@ -455,8 +461,8 @@ int ImportDataset(char const *fname, double *dataset) {
   unsigned long int cnt = 0;
   while (fgets(buf, 4096, fp) && cnt < DATASET_COUNT * DIMENSION) {
     char *field = strtok(buf, ",");
-    long double tmp;
-    sscanf(field, "%Lf", &tmp);
+    double tmp;
+    sscanf(field, "%lf", &tmp);
     dataset[cnt] = tmp;
     cnt++;
 
@@ -464,8 +470,8 @@ int ImportDataset(char const *fname, double *dataset) {
       field = strtok(NULL, ",");
 
       if (field != NULL) {
-        long double tmp;
-        sscanf(field, "%Lf", &tmp);
+        double tmp;
+        sscanf(field, "%lf", &tmp);
         dataset[cnt] = tmp;
         cnt++;
       }
