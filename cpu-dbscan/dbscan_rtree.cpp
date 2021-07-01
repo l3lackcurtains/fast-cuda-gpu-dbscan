@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
 #include <algorithm>
 #include <ctime>
 #include <fstream>
@@ -10,22 +11,26 @@
 
 #include "Rtree.h"
 
-#define DATASET_SIZE 1864620
+int DATASET_SIZE = 400000;
 
 // #define DATASET_SIZE 1000
 
 #define DIMENTION 2
-#define ELIPSON 1.25
-#define MIN_POINTS 4
+#define EPSILON 0.8
+#define MIN_POINTS 8
+
+#define PORTO 0
+#define SPATIAL 0
+#define NGSI 0
+#define IONO2D 1
 
 using namespace std;
 
 struct Rect {
   Rect() {}
-  long double min[2];
-  long double max[2];
-  Rect(long double a_minX, long double a_minY, long double a_maxX,
-       long double a_maxY) {
+  double min[2];
+  double max[2];
+  Rect(double a_minX, double a_minY, double a_maxX, double a_maxY) {
     min[0] = a_minX;
     min[1] = a_minY;
 
@@ -40,7 +45,7 @@ bool searchBoxCallback(int id) {
   return true;
 }
 
-int importDataset(char const *fname, int N, long double **dataset) {
+int importDataset(char const *fname, int N, double **dataset) {
   FILE *fp = fopen(fname, "r");
 
   if (!fp) {
@@ -79,17 +84,17 @@ int importDataset(char const *fname, int N, long double **dataset) {
 
 class DBSCAN {
  private:
-  long double **dataset;
-  double elipson;
+  double **dataset;
+  double epsilon;
   int minPoints;
   int cluster;
   int *clusters;
-  long double getDistance(int center, int neighbor);
+  double getDistance(int center, int neighbor);
   vector<int> findNeighbors(int pos);
-  RTree<long double, long double, 2, long double> tree;
+  RTree<double, double, 2, double> tree;
 
  public:
-  DBSCAN(long double **loadData);
+  DBSCAN(double **loadData, double eps, int minPts);
   ~DBSCAN();
   void run();
   void results();
@@ -97,52 +102,192 @@ class DBSCAN {
 
 int main(int, char **) {
   // Generate random datasets
-  long double **dataset =
-      (long double **)malloc(sizeof(long double *) * DATASET_SIZE);
-  for (int i = 0; i < DATASET_SIZE; i++) {
-    dataset[i] = (long double *)malloc(sizeof(long double) * DIMENTION);
-  }
-
-  importDataset("../dataset/dataset.txt", DATASET_SIZE, dataset);
-
+  char *datasetPath = "";
+  double setOfR[5];
+  int setOfMinPts[5];
+  int defaultMin, defaultPts;
+  double defaultR;
+  int setOfDataSize[5];
 
   clock_t totalTimeStart, totalTimeStop;
   float totalTime = 0.0;
   totalTimeStart = clock();
 
-  // Initialize DBSCAN with dataset
-  DBSCAN dbscan(dataset);
+  if (NGSI) {
+    setOfDataSize[0] = 50000;
+    setOfDataSize[1] = 100000;
+    setOfDataSize[2] = 200000;
+    setOfDataSize[3] = 400000;
+    setOfDataSize[4] = 800000;
 
-  // Run the DBSCAN algorithm
-  dbscan.run();
+    setOfR[0] = 0.2;
+    setOfR[1] = 0.4;
+    setOfR[2] = 0.6;
+    setOfR[3] = 0.8;
+    setOfR[4] = 1;
 
-  totalTimeStop = clock();
-  totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
-  printf("==============================================\n");
-  printf("Total Time: %3.2f seconds\n", totalTime);
-  printf("==============================================\n");
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
 
-    // Print the cluster results of DBSCAN
-  dbscan.results();
-  
-  for (int i = 0; i < DATASET_SIZE; i++) {
-    free(dataset[i]);
+    defaultMin = 8;
+    defaultR = 0.8;
+
+    defaultPts = 200000;
+
+    datasetPath = "/data/dbscan/NGSIM_Data.txt";
   }
-  free(dataset);
+
+  if (SPATIAL) {
+    setOfDataSize[0] = 25000;
+    setOfDataSize[1] = 50000;
+    setOfDataSize[2] = 100000;
+    setOfDataSize[3] = 200000;
+    setOfDataSize[4] = 400000;
+
+    setOfR[0] = 0.02;
+    setOfR[1] = 0.04;
+    setOfR[2] = 0.06;
+    setOfR[3] = 0.08;
+    setOfR[4] = 0.1;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.08;
+
+    defaultPts = 200000;
+
+    datasetPath = "/data/dbscan/3D_spatial_network.txt";
+  }
+
+  if (IONO2D) {
+    setOfDataSize[0] = 100000;
+    setOfDataSize[1] = 200000;
+    setOfDataSize[2] = 400000;
+    setOfDataSize[3] = 800000;
+    setOfDataSize[4] = 1600000;
+
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 4;
+    defaultR = 1.5;
+
+    defaultPts = 200000;
+
+    datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
+  }
+
+  // Different set of R
+  for (int i = 0; i < 5; i++) {
+    DATASET_SIZE = defaultPts;
+    double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
+    }
+    importDataset(datasetPath, DATASET_SIZE, dataset);
+    // Initialize DBSCAN with dataset
+    DBSCAN dbscan(dataset, setOfR[i], defaultMin);
+    dbscan.run();
+
+    totalTimeStop = clock();
+    totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
+    printf("==============================================\n");
+    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", setOfR[i], defaultMin,
+           DATASET_SIZE);
+    printf("Total Time: %3.2f seconds\n", totalTime);
+    dbscan.results();
+    printf("==============================================\n");
+
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      free(dataset[i]);
+    }
+    free(dataset);
+  }
+
+  // Different set of MinPts
+  for (int i = 0; i < 5; i++) {
+    DATASET_SIZE = defaultPts;
+    double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
+    }
+    importDataset("/data/dbscan/NGSIM_Data.txt", DATASET_SIZE, dataset);
+    // Initialize DBSCAN with dataset
+    DBSCAN dbscan(dataset, defaultR, setOfMinPts[i]);
+    dbscan.run();
+
+    totalTimeStop = clock();
+    totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
+    printf("==============================================\n");
+    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", defaultR, setOfMinPts[i],
+           DATASET_SIZE);
+    printf("Total Time: %3.2f seconds\n", totalTime);
+    dbscan.results();
+    printf("==============================================\n");
+
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      free(dataset[i]);
+    }
+    free(dataset);
+  }
+
+  // Different set of Points
+  for (int i = 0; i < 5; i++) {
+    DATASET_SIZE = setOfDataSize[i];
+    double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
+    }
+    importDataset("/data/dbscan/NGSIM_Data.txt", DATASET_SIZE, dataset);
+    // Initialize DBSCAN with dataset
+    DBSCAN dbscan(dataset, defaultR, defaultMin);
+    dbscan.run();
+
+    totalTimeStop = clock();
+    totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
+    printf("==============================================\n");
+    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", defaultR, defaultMin,
+           DATASET_SIZE);
+    printf("Total Time: %3.2f seconds\n", totalTime);
+    dbscan.results();
+    printf("==============================================\n");
+
+    for (int i = 0; i < DATASET_SIZE; i++) {
+      free(dataset[i]);
+    }
+    free(dataset);
+  }
 
   return 0;
 }
 
-DBSCAN::DBSCAN(long double **loadData) {
+DBSCAN::DBSCAN(double **loadData, double eps, int minPts) {
   clusters = (int *)malloc(sizeof(int) * DATASET_SIZE);
 
-  dataset = (long double **)malloc(sizeof(long double *) * DATASET_SIZE);
+  dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
   for (int i = 0; i < DATASET_SIZE; i++) {
-    dataset[i] = (long double *)malloc(sizeof(long double) * DIMENTION);
+    dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
   }
 
-  elipson = ELIPSON;
-  minPoints = MIN_POINTS;
+  epsilon = eps;
+  minPoints = minPts;
   cluster = 0;
 
   for (int i = 0; i < DATASET_SIZE; i++) {
@@ -165,11 +310,11 @@ DBSCAN::~DBSCAN() {
   free(dataset);
 }
 
-long double DBSCAN::getDistance(int center, int neighbor) {
-  long double dist = (dataset[center][0] - dataset[neighbor][0]) *
-                         (dataset[center][0] - dataset[neighbor][0]) +
-                     (dataset[center][1] - dataset[neighbor][1]) *
-                         (dataset[center][1] - dataset[neighbor][1]);
+double DBSCAN::getDistance(int center, int neighbor) {
+  double dist = (dataset[center][0] - dataset[neighbor][0]) *
+                    (dataset[center][0] - dataset[neighbor][0]) +
+                (dataset[center][1] - dataset[neighbor][1]) *
+                    (dataset[center][1] - dataset[neighbor][1]);
 
   return dist;
 }
@@ -237,16 +382,16 @@ void DBSCAN::results() {
 vector<int> DBSCAN::findNeighbors(int pos) {
   vector<int> neighbors;
 
-  Rect searchRect = Rect(dataset[pos][0] - elipson, dataset[pos][1] - elipson,
-                         dataset[pos][0] + elipson, dataset[pos][1] + elipson);
+  Rect searchRect = Rect(dataset[pos][0] - epsilon, dataset[pos][1] - epsilon,
+                         dataset[pos][0] + epsilon, dataset[pos][1] + epsilon);
 
   searchNeighbors.clear();
   tree.Search(searchRect.min, searchRect.max, searchBoxCallback);
 
   for (int x = 0; x < searchNeighbors.size(); x++) {
     // Compute neighbor points of a point at position "pos"
-    long double distance = getDistance(pos, searchNeighbors[x]);
-    if (distance <= elipson * elipson) {
+    double distance = getDistance(pos, searchNeighbors[x]);
+    if (distance <= epsilon * epsilon) {
       neighbors.push_back(searchNeighbors[x]);
     }
   }

@@ -7,7 +7,7 @@ using namespace std;
 #define UNPROCESSED -1
 #define NOISE -2
 
-#define DIMENSION 3
+#define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
 #define THREAD_BLOCKS 256
@@ -22,8 +22,8 @@ using namespace std;
 #define MINPTS 8
 #define EPS 0.08
 
-#define PARTITION_SIZE 13
-#define POINTS_SEARCHED 27
+#define PARTITION_SIZE 300
+#define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
