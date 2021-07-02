@@ -19,10 +19,10 @@ int DATASET_SIZE = 400000;
 #define EPSILON 0.8
 #define MIN_POINTS 8
 
-#define PORTO 0
+#define PORTO 1
 #define SPATIAL 0
 #define NGSI 0
-#define IONO2D 1
+#define IONO2D 0
 
 using namespace std;
 
@@ -109,9 +109,32 @@ int main(int, char **) {
   double defaultR;
   int setOfDataSize[5];
 
-  clock_t totalTimeStart, totalTimeStop;
-  float totalTime = 0.0;
-  totalTimeStart = clock();
+  if (PORTO) {
+    setOfDataSize[0] = 40000;
+    setOfDataSize[1] = 80000;
+    setOfDataSize[2] = 160000;
+    setOfDataSize[3] = 320000;
+    setOfDataSize[4] = 640000;
+
+    setOfR[0] = 0.002;
+    setOfR[1] = 0.004;
+    setOfR[2] = 0.006;
+    setOfR[3] = 0.008;
+    setOfR[4] = 0.01;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.008;
+
+    defaultPts = 160000;
+
+    datasetPath = "/data/dbscan/Porto_taxi_data.csv";
+  }
 
   if (NGSI) {
     setOfDataSize[0] = 50000;
@@ -195,7 +218,12 @@ int main(int, char **) {
   }
 
   // Different set of R
+  printf("################ EPS IMPACT ################\n");
   for (int i = 0; i < 5; i++) {
+    clock_t totalTimeStart, totalTimeStop;
+    float totalTime = 0.0;
+    totalTimeStart = clock();
+
     DATASET_SIZE = defaultPts;
     double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
     for (int i = 0; i < DATASET_SIZE; i++) {
@@ -209,7 +237,7 @@ int main(int, char **) {
     totalTimeStop = clock();
     totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
     printf("==============================================\n");
-    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", setOfR[i], defaultMin,
+    printf("EPS: %f\nMINPTS: %d\nPOINTS: %d\n", setOfR[i], defaultMin,
            DATASET_SIZE);
     printf("Total Time: %3.2f seconds\n", totalTime);
     dbscan.results();
@@ -222,13 +250,18 @@ int main(int, char **) {
   }
 
   // Different set of MinPts
+  printf("################ MINPTS IMPACT ################\n");
   for (int i = 0; i < 5; i++) {
+    clock_t totalTimeStart, totalTimeStop;
+    float totalTime = 0.0;
+    totalTimeStart = clock();
+
     DATASET_SIZE = defaultPts;
     double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
     for (int i = 0; i < DATASET_SIZE; i++) {
       dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
     }
-    importDataset("/data/dbscan/NGSIM_Data.txt", DATASET_SIZE, dataset);
+    importDataset(datasetPath, DATASET_SIZE, dataset);
     // Initialize DBSCAN with dataset
     DBSCAN dbscan(dataset, defaultR, setOfMinPts[i]);
     dbscan.run();
@@ -236,7 +269,7 @@ int main(int, char **) {
     totalTimeStop = clock();
     totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
     printf("==============================================\n");
-    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", defaultR, setOfMinPts[i],
+    printf("EPS: %f\nMINPTS: %d\nPOINTS: %d\n", defaultR, setOfMinPts[i],
            DATASET_SIZE);
     printf("Total Time: %3.2f seconds\n", totalTime);
     dbscan.results();
@@ -249,13 +282,18 @@ int main(int, char **) {
   }
 
   // Different set of Points
+  printf("################ POINTS IMPACT ################\n");
   for (int i = 0; i < 5; i++) {
+    clock_t totalTimeStart, totalTimeStop;
+    float totalTime = 0.0;
+    totalTimeStart = clock();
+
     DATASET_SIZE = setOfDataSize[i];
     double **dataset = (double **)malloc(sizeof(double *) * DATASET_SIZE);
     for (int i = 0; i < DATASET_SIZE; i++) {
       dataset[i] = (double *)malloc(sizeof(double) * DIMENTION);
     }
-    importDataset("/data/dbscan/NGSIM_Data.txt", DATASET_SIZE, dataset);
+    importDataset(datasetPath, DATASET_SIZE, dataset);
     // Initialize DBSCAN with dataset
     DBSCAN dbscan(dataset, defaultR, defaultMin);
     dbscan.run();
@@ -263,7 +301,7 @@ int main(int, char **) {
     totalTimeStop = clock();
     totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
     printf("==============================================\n");
-    printf("EPS: %3.2f\nMINPTS: %d\nPOINTS: %d\n", defaultR, defaultMin,
+    printf("EPS: %f\nMINPTS: %d\nPOINTS: %d\n", defaultR, defaultMin,
            DATASET_SIZE);
     printf("Total Time: %3.2f seconds\n", totalTime);
     dbscan.results();

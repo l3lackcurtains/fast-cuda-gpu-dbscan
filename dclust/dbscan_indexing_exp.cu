@@ -31,12 +31,12 @@ using namespace std;
 #define MAX_SEEDS 128
 
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 800000
+#define DATASET_COUNT 640000
 
 #define MINPTS 8
-#define EPS 0.8
+#define EPS 0.008
 
-#define PARTITION_SIZE 250
+#define PARTITION_SIZE 10
 #define POINTS_SEARCHED 9
 
 struct __align__(8) IndexStructure {

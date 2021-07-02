@@ -7,9 +7,9 @@
 #include "read_dataset.h"
 #include "report.h"
 
-#define PORTO 0
+#define PORTO 1
 #define SPATIAL 0
-#define NGSI 1
+#define NGSI 0
 #define IONO2D 0
 
 int NUM_NODES;
@@ -97,7 +97,7 @@ void runTest(){
 			d_data = NULL;
 			h_data = NULL;
 			char* filename;
-			if(PORTO) filename = "/data/dbscan/Porto_taxi_data.txt";
+			if(PORTO) filename = "/data/dbscan/Porto_taxi_data.csv";
 			if(SPATIAL) filename = "/data/dbscan/3D_spatial_network.txt";
 			if(NGSI) filename = "/data/dbscan/NGSIM_Data.txt";
 			if(IONO2D) filename = "/data/geodata/iono_20min_2Mpts_2D.txt";
@@ -140,36 +140,33 @@ int main()
 	int setOfMinPts[5];
 	int defaultMin, defaultMinStress, defaultPts;
 	double defaultR, defaultRStress;
-	int setOfDataSize[] = {100000, 200000,400000,800000,1600000};
+	int setOfDataSize[] = {40000, 80000, 160000, 320000, 640000};
 
 	if(PORTO){
-	  setOfR[0] = 0.01;
-	  setOfR[1] = 0.015;
-	  setOfR[2] = 0.02;
-	  setOfR[3] = 0.025;
-	  setOfR[4] = 0.03;
+		setOfR[0] = 0.002;
+		setOfR[1] = 0.004;
+		setOfR[2] = 0.006;
+		setOfR[3] = 0.008;
+		setOfR[4] = 0.01;
+  
+		setOfMinPts[0] = 4;
+		setOfMinPts[1] = 8;
+		setOfMinPts[2] = 16;
+		setOfMinPts[3] = 32;
+		setOfMinPts[4] = 64;
+  
+		defaultMin = 8;
+		defaultR = 0.008;
 
-	  setOfMinPts[0] = 10;
-	  setOfMinPts[1] = 50;
-	  setOfMinPts[2] = 100;
-	  setOfMinPts[3] = 500;
-	  setOfMinPts[4] = 1000;
-
-	  defaultMin = 4;
-	  defaultR = 0.025;
-
-	  defaultMinStress = 1000;
-	  defaultRStress = 0.05;
-
-	  defaultPts = 320000;
+	  defaultPts = 160000;
 	}
 
 	if(SPATIAL){
-	  setOfR[0] = 0.02;
-	  setOfR[1] = 0.04;
-	  setOfR[2] = 0.06;
-	  setOfR[3] = 0.08;
-	  setOfR[4] = 0.1;
+	  setOfR[0] = 0.2;
+	  setOfR[1] = 0.4;
+	  setOfR[2] = 0.6;
+	  setOfR[3] = 0.6;
+	  setOfR[4] = 1;
 
 	  setOfMinPts[0] = 4;
 	  setOfMinPts[1] = 8;
@@ -181,9 +178,9 @@ int main()
 	  defaultR = 0.08;
 
 	  defaultMinStress = 8;
-	  defaultRStress = 0.08;
+	  defaultRStress = 0.8;
 
-	  defaultPts = 200000;
+	  defaultPts = 400000;
 	}
 
 	if(NGSI){
@@ -200,7 +197,7 @@ int main()
 	  setOfMinPts[4] = 64;
 
 	  defaultMin = 8;
-	  defaultR = 0.8;
+	  defaultR = 0.08;
 
 	  defaultMinStress = 8;
 	  defaultRStress = 0.8;
