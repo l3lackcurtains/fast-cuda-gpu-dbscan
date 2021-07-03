@@ -17,12 +17,12 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 // #define DATASET_COUNT 1864620
-#define DATASET_COUNT 640000
+#define DATASET_COUNT 100000
 
-#define MINPTS 9
-#define EPS 0.008
+#define MINPTS 4
+#define EPS 1.5
 
-#define PARTITION_SIZE 10
+#define PARTITION_SIZE 50
 #define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////
