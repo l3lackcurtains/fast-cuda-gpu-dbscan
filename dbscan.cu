@@ -161,7 +161,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
-                       int *d_results) {
+                       int *d_results, float *mergeTime) {
   int *localSeedLength;
   localSeedLength = (int *)malloc(sizeof(int) * THREAD_BLOCKS);
   gpuErrchk(cudaMemcpy(localSeedLength, d_seedLength,
@@ -188,6 +188,11 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        cudaMemcpyDeviceToHost));
 
   ////////////////////////////////////////////////////////////////////////////////////////
+
+
+  clock_t mergeStart, mergeStop;
+
+  mergeStart = clock();
 
   int clusterMap[THREAD_BLOCKS];
   set<int> blockSet;
@@ -255,6 +260,10 @@ bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                       data, minCluster);
     }
   }
+
+  mergeStop = clock();
+
+  *mergeTime += (float)(mergeStop - mergeStart) / CLOCKS_PER_SEC;
 
   //////////////////////////////////////////////////////////////////////////////////////////
 

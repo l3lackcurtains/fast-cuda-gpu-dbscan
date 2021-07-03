@@ -6,7 +6,7 @@
 bool MonitorSeedPoints(vector<int>& unprocessedPoints, int* runningCluster,
                        int* d_cluster, int* d_seedList, int* d_seedLength,
                        int* d_collisionMatrix, int* d_extraCollision,
-                       int* d_results);
+                       int* d_results, float *mergeTime);
 
 void GetDbscanResult(int* d_cluster, int* runningCluster, int* clusterCount,
                      int* noiseCount);

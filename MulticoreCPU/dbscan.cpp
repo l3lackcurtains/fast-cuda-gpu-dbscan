@@ -215,9 +215,9 @@ void read_dataset(char *filename, traj_data_t **d_data, traj_data_t **h_data,
   preprocess_data(filename, h_data, max_pts_limit, 1);
 }
 
-#define PORTO 1
+#define PORTO 0
 #define SPATIAL 0
-#define NGSI 0
+#define NGSI 1
 #define IONO2D 0
 
 ////////////////////////////////////////////////////////////////
@@ -310,11 +310,11 @@ int main(int argc, char *argv[]) {
     setOfDataSize[3] = 200000;
     setOfDataSize[4] = 400000;
 
-    setOfR[0] = 0.02;
-    setOfR[1] = 0.04;
-    setOfR[2] = 0.06;
-    setOfR[3] = 0.08;
-    setOfR[4] = 0.1;
+    setOfR[0] = 0.2;
+    setOfR[1] = 0.4;
+    setOfR[2] = 0.6;
+    setOfR[3] = 0.8;
+    setOfR[4] = 1;
 
     setOfMinPts[0] = 4;
     setOfMinPts[1] = 8;
@@ -323,9 +323,9 @@ int main(int argc, char *argv[]) {
     setOfMinPts[4] = 64;
 
     defaultMin = 8;
-    defaultR = 0.08;
+    defaultR = 0.8;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
   }
 
   if (NGSI) {
@@ -350,7 +350,7 @@ int main(int argc, char *argv[]) {
     defaultMin = 8;
     defaultR = 0.8;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
   }
 
   if (IONO2D) {
@@ -375,7 +375,7 @@ int main(int argc, char *argv[]) {
     defaultMin = 4;
     defaultR = 1.5;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
   }
 
   points = new point[MaxPts];
@@ -386,6 +386,14 @@ int main(int argc, char *argv[]) {
   }
   gettimeofday(&(report[current].data_read_time_end), NULL);
 
+  // Test impact of radius
+  for (int i = 0; i < rangeSize; i++) {
+    RADIUS = setOfR[i];
+    MinPts = defaultMin;
+    TOTAL_PTS = defaultPts;
+    TestRun(points);
+  }
+
   // Test impact of minPts
   for (int i = 0; i < rangeSize; i++) {
     RADIUS = defaultR;
@@ -393,20 +401,14 @@ int main(int argc, char *argv[]) {
     TOTAL_PTS = defaultPts;
     TestRun(points);
   }
-  // // Test impact of radius
-  // for (int i = 0; i < rangeSize; i++) {
-  //   RADIUS = setOfR[i];
-  //   MinPts = defaultMin;
-  //   TOTAL_PTS = defaultPts;
-  //   TestRun(points);
-  // }
+
   // // Test impact of points
-  // for (int i = 0; i < rangeSize; i++) {
-  //   RADIUS = defaultRStress;
-  //   MinPts = defaultMinStress;
-  //   TOTAL_PTS = setOfDataSize[i];
-  //   TestRun(points);
-  // }
+  for (int i = 0; i < rangeSize; i++) {
+    RADIUS = defaultR;
+    MinPts = defaultMin;
+    TOTAL_PTS = setOfDataSize[i];
+    TestRun(points);
+  }
 
   //  RADIUS = defaultRStress;
   //  MinPts = defaultMinStress;

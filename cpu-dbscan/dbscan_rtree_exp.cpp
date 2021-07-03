@@ -16,11 +16,11 @@ int DATASET_SIZE = 400000;
 // #define DATASET_SIZE 1000
 
 #define DIMENTION 2
-#define EPSILON 0.8
+#define EPSILON 0.08
 #define MIN_POINTS 8
 
-#define PORTO 1
-#define SPATIAL 0
+#define PORTO 0
+#define SPATIAL 1
 #define NGSI 0
 #define IONO2D 0
 
@@ -158,7 +158,7 @@ int main(int, char **) {
     defaultMin = 8;
     defaultR = 0.8;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
 
     datasetPath = "/data/dbscan/NGSIM_Data.txt";
   }
@@ -170,11 +170,11 @@ int main(int, char **) {
     setOfDataSize[3] = 200000;
     setOfDataSize[4] = 400000;
 
-    setOfR[0] = 0.02;
-    setOfR[1] = 0.04;
-    setOfR[2] = 0.06;
-    setOfR[3] = 0.08;
-    setOfR[4] = 0.1;
+    setOfR[0] = 0.2;
+    setOfR[1] = 0.4;
+    setOfR[2] = 0.6;
+    setOfR[3] = 0.8;
+    setOfR[4] = 1;
 
     setOfMinPts[0] = 4;
     setOfMinPts[1] = 8;
@@ -183,11 +183,11 @@ int main(int, char **) {
     setOfMinPts[4] = 64;
 
     defaultMin = 8;
-    defaultR = 0.08;
+    defaultR = 0.8;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
 
-    datasetPath = "/data/dbscan/3D_spatial_network.txt";
+    datasetPath = "/home/mpoudel/datasets/3D_spatial_network.csv";
   }
 
   if (IONO2D) {
@@ -212,7 +212,7 @@ int main(int, char **) {
     defaultMin = 4;
     defaultR = 1.5;
 
-    defaultPts = 200000;
+    defaultPts = 400000;
 
     datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
   }

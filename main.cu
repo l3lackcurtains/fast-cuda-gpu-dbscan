@@ -352,24 +352,25 @@ int main(int argc, char **argv) {
   // Handler to conmtrol the while loop
   bool exit = false;
 
-  clock_t communicationStart, communicationStop, dbscanKernelStart, dbscanKernelStop;
-  float communicationTime = 0.0;
+  clock_t monitorStart, monitorStop, dbscanKernelStart, dbscanKernelStop;
+  float monitorTime = 0.0;
   float dbscanKernelTime = 0.0;
+  float mergeTime = 0.0;
 
   while (!exit) {
 
-    communicationStart = clock();
+    monitorStart = clock();
     // Monitor the seed list and return the comptetion status of points
     int completed =
         MonitorSeedPoints(unprocessedPoints, &runningCluster,
                           d_cluster, d_seedList, d_seedLength,
-                          d_collisionMatrix, d_extraCollision, d_results);
+                          d_collisionMatrix, d_extraCollision, d_results, &mergeTime);
 
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //     unprocessedPoints.size());
 
-    communicationStop = clock();
-    communicationTime += (float)(communicationStop - communicationStart) / CLOCKS_PER_SEC;
+    monitorStop = clock();
+    monitorTime += (float)(monitorStop - monitorStart) / CLOCKS_PER_SEC;
 
     // If all points are processed, exit
     if (completed) {
@@ -414,7 +415,8 @@ int main(int argc, char **argv) {
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
-  printf("Communication Time: %3.2f seconds\n", communicationTime);
+  printf("Merge Time: %3.2f seconds\n", mergeTime);
+  printf("Communication Time: %3.2f seconds\n", monitorTime - mergeTime);
   printf("DBSCAN kernel Time: %3.2f seconds\n", dbscanKernelTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
