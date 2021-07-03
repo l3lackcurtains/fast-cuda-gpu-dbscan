@@ -303,31 +303,6 @@ int main(int argc, char *argv[]) {
     defaultPts = 160000;
   }
 
-  if (SPATIAL) {
-    setOfDataSize[0] = 25000;
-    setOfDataSize[1] = 50000;
-    setOfDataSize[2] = 100000;
-    setOfDataSize[3] = 200000;
-    setOfDataSize[4] = 400000;
-
-    setOfR[0] = 0.2;
-    setOfR[1] = 0.4;
-    setOfR[2] = 0.6;
-    setOfR[3] = 0.8;
-    setOfR[4] = 1;
-
-    setOfMinPts[0] = 4;
-    setOfMinPts[1] = 8;
-    setOfMinPts[2] = 16;
-    setOfMinPts[3] = 32;
-    setOfMinPts[4] = 64;
-
-    defaultMin = 8;
-    defaultR = 0.8;
-
-    defaultPts = 400000;
-  }
-
   if (NGSI) {
     setOfDataSize[0] = 50000;
     setOfDataSize[1] = 100000;
@@ -349,6 +324,31 @@ int main(int argc, char *argv[]) {
 
     defaultMin = 8;
     defaultR = 0.8;
+
+    defaultPts = 400000;
+  }
+
+  if (SPATIAL) {
+    setOfDataSize[0] = 25000;
+    setOfDataSize[1] = 50000;
+    setOfDataSize[2] = 100000;
+    setOfDataSize[3] = 200000;
+    setOfDataSize[4] = 400000;
+
+    setOfR[0] = 0.002;
+    setOfR[1] = 0.004;
+    setOfR[2] = 0.006;
+    setOfR[3] = 0.008;
+    setOfR[4] = 0.01;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.008;
 
     defaultPts = 400000;
   }
@@ -409,11 +409,6 @@ int main(int argc, char *argv[]) {
     TOTAL_PTS = setOfDataSize[i];
     TestRun(points);
   }
-
-  //  RADIUS = defaultRStress;
-  //  MinPts = defaultMinStress;
-  //  TOTAL_PTS = defaultPts;
-  //  	  TestRun(points);
 
   cout << "cluterThread completed!" << endl;
 

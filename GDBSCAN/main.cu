@@ -7,9 +7,9 @@
 #include "read_dataset.h"
 #include "report.h"
 
-#define PORTO 1
+#define PORTO 0
 #define SPATIAL 0
-#define NGSI 0
+#define NGSI 1
 #define IONO2D 0
 
 int NUM_NODES;
@@ -140,92 +140,108 @@ int main()
 	int setOfMinPts[5];
 	int defaultMin, defaultMinStress, defaultPts;
 	double defaultR, defaultRStress;
-	int setOfDataSize[] = {40000, 80000, 160000, 320000, 640000};
+	int setOfDataSize[5];
 
-	if(PORTO){
+	if (PORTO) {
+		setOfDataSize[0] = 40000;
+		setOfDataSize[1] = 80000;
+		setOfDataSize[2] = 160000;
+		setOfDataSize[3] = 320000;
+		setOfDataSize[4] = 640000;
+	
 		setOfR[0] = 0.002;
 		setOfR[1] = 0.004;
 		setOfR[2] = 0.006;
 		setOfR[3] = 0.008;
 		setOfR[4] = 0.01;
-  
+	
 		setOfMinPts[0] = 4;
 		setOfMinPts[1] = 8;
 		setOfMinPts[2] = 16;
 		setOfMinPts[3] = 32;
 		setOfMinPts[4] = 64;
-  
+	
 		defaultMin = 8;
 		defaultR = 0.008;
-
-	  defaultPts = 160000;
-	}
-
-	if(SPATIAL){
-	  setOfR[0] = 0.2;
-	  setOfR[1] = 0.4;
-	  setOfR[2] = 0.6;
-	  setOfR[3] = 0.6;
-	  setOfR[4] = 1;
-
-	  setOfMinPts[0] = 4;
-	  setOfMinPts[1] = 8;
-	  setOfMinPts[2] = 16;
-	  setOfMinPts[3] = 32;
-	  setOfMinPts[4] = 64;
-
-	  defaultMin = 8;
-	  defaultR = 0.08;
-
-	  defaultMinStress = 8;
-	  defaultRStress = 0.8;
-
-	  defaultPts = 400000;
-	}
-
-	if(NGSI){
-	  setOfR[0] = 0.2;
-	  setOfR[1] = 0.4;
-	  setOfR[2] = 0.6;
-	  setOfR[3] = 0.8;
-	  setOfR[4] = 1;
-
-	  setOfMinPts[0] = 4;
-	  setOfMinPts[1] = 8;
-	  setOfMinPts[2] = 16;
-	  setOfMinPts[3] = 32;
-	  setOfMinPts[4] = 64;
-
-	  defaultMin = 8;
-	  defaultR = 0.08;
-
-	  defaultMinStress = 8;
-	  defaultRStress = 0.8;
-
-	  defaultPts = 400000;
-	}
-
-	if(IONO2D){
+	
+		defaultPts = 160000;
+	  }
+	
+	  if (NGSI) {
+		setOfDataSize[0] = 50000;
+		setOfDataSize[1] = 100000;
+		setOfDataSize[2] = 200000;
+		setOfDataSize[3] = 400000;
+		setOfDataSize[4] = 800000;
+	
+		setOfR[0] = 0.2;
+		setOfR[1] = 0.4;
+		setOfR[2] = 0.6;
+		setOfR[3] = 0.8;
+		setOfR[4] = 1;
+	
+		setOfMinPts[0] = 4;
+		setOfMinPts[1] = 8;
+		setOfMinPts[2] = 16;
+		setOfMinPts[3] = 32;
+		setOfMinPts[4] = 64;
+	
+		defaultMin = 8;
+		defaultR = 0.8;
+	
+		defaultPts = 400000;
+	  }
+	
+	  if (SPATIAL) {
+		setOfDataSize[0] = 25000;
+		setOfDataSize[1] = 50000;
+		setOfDataSize[2] = 100000;
+		setOfDataSize[3] = 200000;
+		setOfDataSize[4] = 400000;
+	
+		setOfR[0] = 0.002;
+		setOfR[1] = 0.004;
+		setOfR[2] = 0.006;
+		setOfR[3] = 0.008;
+		setOfR[4] = 0.01;
+	
+		setOfMinPts[0] = 4;
+		setOfMinPts[1] = 8;
+		setOfMinPts[2] = 16;
+		setOfMinPts[3] = 32;
+		setOfMinPts[4] = 64;
+	
+		defaultMin = 8;
+		defaultR = 0.008;
+	
+		defaultPts = 400000;
+	
+	  }
+	
+	  if (IONO2D) {
+		setOfDataSize[0] = 50000;
+		setOfDataSize[1] = 100000;
+		setOfDataSize[2] = 200000;
+		setOfDataSize[3] = 400000;
+		setOfDataSize[4] = 800000;
+	
 		setOfR[0] = 0.5;
 		setOfR[1] = 0.75;
 		setOfR[2] = 1;
 		setOfR[3] = 1.25;
 		setOfR[4] = 1.5;
-  
+	
 		setOfMinPts[0] = 4;
 		setOfMinPts[1] = 8;
 		setOfMinPts[2] = 16;
 		setOfMinPts[3] = 32;
 		setOfMinPts[4] = 64;
-  
+	
 		defaultMin = 4;
 		defaultR = 1.5;
-  
-		defaultMinStress = 4;
-		defaultRStress = 1.5;
-  
+	
 		defaultPts = 400000;
-	}
+	 }
 
 	RADIUS = defaultRStress;
 	MIN_POINTS = defaultMinStress;
@@ -234,16 +250,8 @@ int main()
 	NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
 	// runTest();
 
-//	//Test impact of minPts
-	// for(int i=0;i<rangeSize;i++){
-	//   RADIUS = defaultR;
-	//   MIN_POINTS = setOfMinPts[i];
-	//   NUM_NODES = defaultPts;
-	// 	BLOCK_THREADS = 256;
-	// 	NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
-	// 	runTest();
-	// }
-//	//Test impact of radius
+	
+	// //Test impact of radius
 	// for(int i=0;i<rangeSize;i++){
 	//   RADIUS = setOfR[i];
 	//   MIN_POINTS = defaultMin;
@@ -252,10 +260,21 @@ int main()
 	// 	NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
 	// 	runTest();
 	// }
+
+	// //Test impact of minPts
+	// for(int i=0;i<rangeSize;i++){
+	// 	RADIUS = defaultR;
+	// 	MIN_POINTS = setOfMinPts[i];
+	// 	NUM_NODES = defaultPts;
+	// 	  BLOCK_THREADS = 256;
+	// 	  NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
+	// 	  runTest();
+	//   }
+
 //	//Test impact of points
 	for(int i=0;i<rangeSize;i++){
-	  RADIUS = defaultRStress;
-	  MIN_POINTS = defaultMinStress;
+	  RADIUS = defaultR;
+	  MIN_POINTS = defaultMin;
 	  NUM_NODES = setOfDataSize[i];
 		BLOCK_THREADS = 256;
 		NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;

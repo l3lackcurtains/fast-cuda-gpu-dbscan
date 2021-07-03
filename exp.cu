@@ -36,7 +36,7 @@ __managed__ int MINPTS = 8;
 __managed__ double EPS = 0.08;
 __managed__ int DATASET_COUNT = 100000;
 
-#define PARTITION_SIZE 10
+#define PARTITION_SIZE 100
 #define POINTS_SEARCHED 9
 
 #define PORTO 0
@@ -499,148 +499,6 @@ void runDBSCAN(char* const filename, int datasetSize, double eps, int minPts) {
 }
 
 
-
-int main() {
-
-    // Generate random datasets
-    char *datasetPath;
-    double setOfR[5];
-    int setOfMinPts[5];
-    int defaultMin, defaultPts;
-    double defaultR;
-    int setOfDataSize[5];
-  
-    if (PORTO) {
-      setOfDataSize[0] = 40000;
-      setOfDataSize[1] = 80000;
-      setOfDataSize[2] = 160000;
-      setOfDataSize[3] = 320000;
-      setOfDataSize[4] = 640000;
-  
-      setOfR[0] = 0.002;
-      setOfR[1] = 0.004;
-      setOfR[2] = 0.006;
-      setOfR[3] = 0.008;
-      setOfR[4] = 0.01;
-  
-      setOfMinPts[0] = 4;
-      setOfMinPts[1] = 8;
-      setOfMinPts[2] = 16;
-      setOfMinPts[3] = 32;
-      setOfMinPts[4] = 64;
-  
-      defaultMin = 8;
-      defaultR = 0.008;
-  
-      defaultPts = 160000;
-  
-      datasetPath = "/data/dbscan/Porto_taxi_data.csv";
-    }
-  
-    if (NGSI) {
-      setOfDataSize[0] = 50000;
-      setOfDataSize[1] = 100000;
-      setOfDataSize[2] = 200000;
-      setOfDataSize[3] = 400000;
-      setOfDataSize[4] = 800000;
-  
-      setOfR[0] = 0.2;
-      setOfR[1] = 0.4;
-      setOfR[2] = 0.6;
-      setOfR[3] = 0.8;
-      setOfR[4] = 1;
-  
-      setOfMinPts[0] = 4;
-      setOfMinPts[1] = 8;
-      setOfMinPts[2] = 16;
-      setOfMinPts[3] = 32;
-      setOfMinPts[4] = 64;
-  
-      defaultMin = 8;
-      defaultR = 0.8;
-  
-      defaultPts = 400000;
-  
-      datasetPath = "/data/dbscan/NGSIM_Data.txt";
-    }
-  
-    if (SPATIAL) {
-      setOfDataSize[0] = 25000;
-      setOfDataSize[1] = 50000;
-      setOfDataSize[2] = 100000;
-      setOfDataSize[3] = 200000;
-      setOfDataSize[4] = 400000;
-  
-      setOfR[0] = 0.2;
-      setOfR[1] = 0.4;
-      setOfR[2] = 0.6;
-      setOfR[3] = 0.8;
-      setOfR[4] = 1;
-  
-      setOfMinPts[0] = 4;
-      setOfMinPts[1] = 8;
-      setOfMinPts[2] = 16;
-      setOfMinPts[3] = 32;
-      setOfMinPts[4] = 64;
-  
-      defaultMin = 8;
-      defaultR = 0.8;
-  
-      defaultPts = 400000;
-  
-      datasetPath = "/home/mpoudel/datasets/3D_spatial_network.csv";
-    }
-  
-    if (IONO2D) {
-      setOfDataSize[0] = 100000;
-      setOfDataSize[1] = 200000;
-      setOfDataSize[2] = 400000;
-      setOfDataSize[3] = 800000;
-      setOfDataSize[4] = 1600000;
-  
-      setOfR[0] = 0.5;
-      setOfR[1] = 0.75;
-      setOfR[2] = 1;
-      setOfR[3] = 1.25;
-      setOfR[4] = 1.5;
-  
-      setOfMinPts[0] = 4;
-      setOfMinPts[1] = 8;
-      setOfMinPts[2] = 16;
-      setOfMinPts[3] = 32;
-      setOfMinPts[4] = 64;
-  
-      defaultMin = 4;
-      defaultR = 1.5;
-  
-      defaultPts = 400000;
-  
-      datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
-    }
-  
-    //   // Different set of Eps
-    //   printf("################ EPS IMPACT ################\n");
-    //   for (int i = 0; i < 5; i++) {
-    //     runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin);
-    //   }
-  
-    //   // Different set of MinPts
-    //   printf("################ MINPTS IMPACT ################\n");
-    //   for (int i = 0; i < 5; i++) {
-    //     runDBSCAN(datasetPath, defaultPts, defaultR, setOfMinPts[i]);
-    //   }
-    
-      // Different set of Points
-      printf("################ POINTS IMPACT ################\n");
-      for (int i = 0; i < 5; i++) {
-        runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin);
-      }
-  
-    
-  }
-  
-
-
 /**
 **************************************************************************
 //////////////////////////////////////////////////////////////////////////
@@ -790,13 +648,14 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                        int *seedLength, int *collisionMatrix,
                        int *extraCollision, int *results,
                        struct IndexStructure **indexBuckets,
+
                        int *indexesStack, int *dataValue, double *upperBounds,
                        double *binWidth) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
   // Neighbors to store of neighbors points exceeds minpoints
-  __shared__ int neighborBuffer[4];
+  __shared__ int neighborBuffer[64];
 
   // It counts the total neighbors
   __shared__ int neighborCount;
@@ -922,6 +781,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     __syncthreads();
   }
 }
+
 
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
@@ -1218,4 +1078,145 @@ void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
 
 
   cudaFree(d_localCluster);
+}
+
+
+
+int main() {
+
+  // Generate random datasets
+  char *datasetPath;
+  double setOfR[5];
+  int setOfMinPts[5];
+  int defaultMin, defaultPts;
+  double defaultR;
+  int setOfDataSize[5];
+
+  if (PORTO) {
+    setOfDataSize[0] = 40000;
+    setOfDataSize[1] = 80000;
+    setOfDataSize[2] = 160000;
+    setOfDataSize[3] = 320000;
+    setOfDataSize[4] = 640000;
+
+    setOfR[0] = 0.002;
+    setOfR[1] = 0.004;
+    setOfR[2] = 0.006;
+    setOfR[3] = 0.008;
+    setOfR[4] = 0.01;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.008;
+
+    defaultPts = 160000;
+
+    datasetPath = "/data/dbscan/Porto_taxi_data.csv";
+  }
+
+  if (NGSI) {
+    setOfDataSize[0] = 50000;
+    setOfDataSize[1] = 100000;
+    setOfDataSize[2] = 200000;
+    setOfDataSize[3] = 400000;
+    setOfDataSize[4] = 800000;
+
+    setOfR[0] = 0.2;
+		setOfR[1] = 0.4;
+		setOfR[2] = 0.6;
+		setOfR[3] = 0.8;
+		setOfR[4] = 1;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.8;
+
+    defaultPts = 400000;
+
+    datasetPath = "/data/dbscan/NGSIM_Data.txt";
+  }
+
+  if (SPATIAL) {
+    setOfDataSize[0] = 25000;
+    setOfDataSize[1] = 50000;
+    setOfDataSize[2] = 100000;
+    setOfDataSize[3] = 200000;
+    setOfDataSize[4] = 400000;
+
+    setOfR[0] = 0.002;
+    setOfR[1] = 0.004;
+    setOfR[2] = 0.006;
+    setOfR[3] = 0.008;
+    setOfR[4] = 0.01;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 8;
+    defaultR = 0.008;
+
+    defaultPts = 400000;
+
+    datasetPath = "/home/mpoudel/datasets/3D_spatial_network.csv";
+  }
+
+  if (IONO2D) {
+    setOfDataSize[0] = 50000;
+    setOfDataSize[1] = 100000;
+    setOfDataSize[2] = 200000;
+    setOfDataSize[3] = 400000;
+    setOfDataSize[4] = 800000;
+
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 4;
+    defaultR = 1.5;
+
+    defaultPts = 400000;
+
+    datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
+  }
+
+    // // Different set of Eps
+    // printf("################ EPS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin);
+    // }
+
+    // // Different set of MinPts
+    // printf("################ MINPTS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   runDBSCAN(datasetPath, defaultPts, defaultR, setOfMinPts[i]);
+    // }
+  
+    // Different set of Points
+    printf("################ POINTS IMPACT ################\n");
+    for (int i = 0; i < 5; i++) {
+      runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin);
+    }
+
+  
 }
