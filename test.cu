@@ -323,7 +323,7 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaDeviceSynchronize());
 
   cudaFree(d_indexTreeMetaData);
-  cudaFree(d_minPoints);
+  
 
   /**
  **************************************************************************
@@ -394,10 +394,10 @@ int main(int argc, char **argv) {
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
-    DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
+    DBSCAN_TEST<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth);
+        d_dataValue, d_upperBounds, d_binWidth, d_minPoints, d_maxPoints);
     gpuErrchk(cudaDeviceSynchronize());
 
     dbscanKernelStop = clock();
@@ -454,6 +454,10 @@ int main(int argc, char **argv) {
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
+
+
+  cudaFree(d_minPoints);
+  cudaFree(d_maxPoints);
 }
 
 /**

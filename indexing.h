@@ -27,16 +27,28 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
                              int *indexesStack, int *dataValue,
                              double *upperBounds, double *binWidth);
 
-
 __global__ void INDEXING_STRUCTURE_TEST(double *dataset, int *indexTreeMetaData,
-                                   double *minPoints, double *maxPoints, double *binWidth,
-                                   int *results,
-                                   struct IndexStructure **indexBuckets,
-                                   int *dataKey, int *dataValue,
-                                   double *upperBounds);
+                                        double *minPoints, double *maxPoints,
+                                        double *binWidth, int *results,
+                                        struct IndexStructure **indexBuckets,
+                                        int *dataKey, int *dataValue,
+                                        double *upperBounds);
 
 __device__ void insertData_TEST(int id, double *dataset,
-                           struct IndexStructure **indexBuckets, int *dataKey,
-                           int *dataValue, double *upperBounds,
-                           double *binWidth, double *minPoints, double *maxPoints);
+                                struct IndexStructure **indexBuckets,
+                                int *dataKey, int *dataValue,
+                                double *upperBounds, double *binWidth,
+                                double *minPoints, double *maxPoints);
+
+__device__ void indexConstruction_TEST(int level, int *indexTreeMetaData,
+                                       double *minPoints, double *binWidth,
+                                       struct IndexStructure **indexBuckets,
+                                       double *upperBounds);
+
+__device__ void searchPoints_TEST(double *data, int chainID, double *dataset,
+                                  int *results,
+                                  struct IndexStructure **indexBuckets,
+                                  int *indexesStack, int *dataValue,
+                                  double *upperBounds, double *binWidth,
+                                  double *minPoints, double *maxPoints);
 #endif

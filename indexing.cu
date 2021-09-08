@@ -133,7 +133,7 @@ __global__ void INDEXING_STRUCTURE_TEST(double *dataset, int *indexTreeMetaData,
                                    int *dataKey, int *dataValue,
                                    double *upperBounds) {
   if (blockIdx.x < DIMENSION) {
-    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
+    indexConstruction_TEST(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
                       indexBuckets, upperBounds);
   }
   __syncthreads();
@@ -143,6 +143,35 @@ __global__ void INDEXING_STRUCTURE_TEST(double *dataset, int *indexTreeMetaData,
        i = i + THREAD_COUNT * THREAD_BLOCKS) {
     insertData_TEST(i, dataset, indexBuckets, dataKey, dataValue, upperBounds,
                binWidth, minPoints, maxPoints);
+  }
+  __syncthreads();
+}
+
+__device__ void indexConstruction_TEST(int level, int *indexTreeMetaData,
+                                  double *minPoints, double *binWidth,
+                                  struct IndexStructure **indexBuckets,
+                                  double *upperBounds) {
+  for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
+       k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
+    for (int i = 0; i < PARTITION_SIZE; i++) {
+      int currentBucketIndex =
+          indexTreeMetaData[level * RANGE + 1] + i +
+          (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
+
+      indexBuckets[k]->dimension = level;
+      indexBuckets[currentBucketIndex]->dimension = level + 1;
+
+      if (i == 0) {
+        indexBuckets[k]->childFrom = currentBucketIndex;
+      }
+
+      double rightPoint =
+          minPoints[level] + i * binWidth[level] + binWidth[level];
+
+      if (i == PARTITION_SIZE - 1) rightPoint = rightPoint + binWidth[level];
+
+      upperBounds[currentBucketIndex] = rightPoint;
+    }
   }
   __syncthreads();
 }
@@ -158,29 +187,6 @@ __device__ void insertData_TEST(int id, double *dataset,
     index = index * PARTITION_SIZE + currentIndex;
   }
 
-
-  double data[DIMENSION];
-  for (int j = 0; j < DIMENSION; j++) {
-    data[j] = dataset[id * DIMENSION + j];
-  }
-
-  int currentIndex = 0;
-  bool found = false;
-
-  while (!found) {
-    if (indexBuckets[currentIndex]->dimension >= DIMENSION) break;
-    double comparingData = data[indexBuckets[currentIndex]->dimension];
-
-    int k = thrust::upper_bound(thrust::device, upperBounds + indexBuckets[currentIndex]->childFrom,
-      upperBounds + indexBuckets[currentIndex]->childFrom + PARTITION_SIZE, comparingData, thrust::less<double>()) - upperBounds;
-
-    if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-      dataValue[id] = id;
-      dataKey[id] = k;
-      found = true;
-      printf("%d:%d ", k, index);
-    }
-    currentIndex = k;      
-  }
-  
+  dataValue[id] = id;
+  dataKey[id] = index;
 }

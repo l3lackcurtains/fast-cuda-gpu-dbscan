@@ -53,4 +53,12 @@ void searchFromIndexTree(int* d_cluster, double* d_upperBounds, double* dataset,
                          int* d_seedList, int* d_seedLength, int* d_results,
                          int indexTreeMetaData[TREE_LEVELS * RANGE]);
 
+
+__global__ void DBSCAN_TEST(double *dataset, int *cluster, int *seedList,
+                       int *seedLength, int *collisionMatrix,
+                       int *extraCollision, int *results,
+                       struct IndexStructure **indexBuckets,
+                       int *indexesStack, int *dataValue, double *upperBounds,
+                       double *binWidth, double *minPoints, double *maxPoints);
+
 #endif
