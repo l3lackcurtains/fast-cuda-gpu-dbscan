@@ -23,7 +23,7 @@ using namespace std;
 #define UNPROCESSED -1
 #define NOISE -2
 
-#define DIMENSION 2
+#define DIMENSION 3
 #define TREE_LEVELS (DIMENSION + 1)
 
 #define THREAD_BLOCKS 256
@@ -33,16 +33,18 @@ using namespace std;
 #define EXTRA_COLLISION_SIZE 512
 
 __managed__ int MINPTS = 8;
-__managed__ double EPS = 0.08;
-__managed__ int DATASET_COUNT = 100000;
+__managed__ double EPS = 1.25;
+__managed__ int DATASET_COUNT = 400000;
+__managed__ int PARTITION_SIZE = 100;
 
-#define PARTITION_SIZE 100
-#define POINTS_SEARCHED 9
+#define POINTS_SEARCHED 27
 
 #define PORTO 0
 #define SPATIAL 0
 #define NGSI 0
-#define IONO2D 1
+#define IONO2D 0
+#define SPATIAL3D 1
+#define IONO3D 0
 
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -124,11 +126,12 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
 //////////////////////////////////////////////////////////////////////////
 **************************************************************************
 */
-void runDBSCAN(char* const filename, int datasetSize, double eps, int minPts) {
+void runDBSCAN(char* const filename, int datasetSize, double eps, int minPts, int partition) {
 
     EPS = eps;
     MINPTS = minPts;
     DATASET_COUNT = datasetSize;
+    PARTITION_SIZE = partition;
 
   printf("Using dataset file %s\n", filename);
 
@@ -269,7 +272,7 @@ void runDBSCAN(char* const filename, int datasetSize, double eps, int minPts) {
 
   if (minBinSize < EPS) {
     printf("Bin width (%f) is less than EPS(%f).\n", minBinSize, EPS);
-    exit(0);
+    return;
   }
 
   // Level Partition
@@ -464,7 +467,7 @@ void runDBSCAN(char* const filename, int datasetSize, double eps, int minPts) {
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 
   printf("==============================================\n");
-  printf("Dataset: %d\nEPS: %f\nMINPTS: %d\n", DATASET_COUNT, EPS, MINPTS);
+  printf("Dataset: %d\nEPS: %f\nMINPTS: %d\nPARTITION: %d\n", DATASET_COUNT, EPS, MINPTS, PARTITION_SIZE);
   printf("Final cluster after merging: %d\n", clusterCount);
   printf("Number of noises: %d\n", noiseCount);
   printf("=======\n");
@@ -1090,7 +1093,9 @@ int main() {
   int setOfMinPts[5];
   int defaultMin, defaultPts;
   double defaultR;
+  int defaultP;
   int setOfDataSize[5];
+  int setOfP[5];
 
   if (PORTO) {
     setOfDataSize[0] = 40000;
@@ -1113,9 +1118,9 @@ int main() {
 
     defaultMin = 8;
     defaultR = 0.008;
-
     defaultPts = 160000;
 
+    defaultP = 100;
     datasetPath = "/data/dbscan/Porto_taxi_data.csv";
   }
 
@@ -1126,11 +1131,11 @@ int main() {
     setOfDataSize[3] = 400000;
     setOfDataSize[4] = 800000;
 
-    setOfR[0] = 0.2;
-		setOfR[1] = 0.4;
-		setOfR[2] = 0.6;
-		setOfR[3] = 0.8;
-		setOfR[4] = 1;
+    setOfR[0] = 0.5;
+		setOfR[1] = 0.75;
+		setOfR[2] = 1;
+		setOfR[3] = 1.25;
+		setOfR[4] = 1.5;
 
     setOfMinPts[0] = 4;
     setOfMinPts[1] = 8;
@@ -1139,11 +1144,11 @@ int main() {
     setOfMinPts[4] = 64;
 
     defaultMin = 8;
-    defaultR = 0.8;
-
+    defaultR = 1.25;
     defaultPts = 400000;
 
-    datasetPath = "/data/dbscan/NGSIM_Data.txt";
+    defaultP = 100;
+    datasetPath = "/home/mpoudel/datasets/NGSIM_Data.txt";
   }
 
   if (SPATIAL) {
@@ -1167,9 +1172,9 @@ int main() {
 
     defaultMin = 8;
     defaultR = 0.008;
-
     defaultPts = 400000;
 
+    defaultP = 80;
     datasetPath = "/home/mpoudel/datasets/3D_spatial_network.csv";
   }
 
@@ -1194,29 +1199,104 @@ int main() {
 
     defaultMin = 4;
     defaultR = 1.5;
-
     defaultPts = 400000;
 
+    defaultP = 80;
     datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
   }
 
-    // // Different set of Eps
-    // printf("################ EPS IMPACT ################\n");
-    // for (int i = 0; i < 5; i++) {
-    //   runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin);
-    // }
+  if (SPATIAL3D) {
+    setOfDataSize[0] = 25000;
+    setOfDataSize[1] = 50000;
+    setOfDataSize[2] = 100000;
+    setOfDataSize[3] = 200000;
+    setOfDataSize[4] = 400000;
 
-    // // Different set of MinPts
-    // printf("################ MINPTS IMPACT ################\n");
-    // for (int i = 0; i < 5; i++) {
-    //   runDBSCAN(datasetPath, defaultPts, defaultR, setOfMinPts[i]);
-    // }
+    setOfR[0] = 0.02;
+    setOfR[1] = 0.04;
+    setOfR[2] = 0.06;
+    setOfR[3] = 0.08;
+    setOfR[4] = 0.1;
+
+    setOfMinPts[0] = 1;
+    setOfMinPts[1] = 2;
+    setOfMinPts[2] = 4;
+    setOfMinPts[3] = 8;
+    setOfMinPts[4] = 16;
+
+    defaultMin = 2;
+    defaultR = 0.08;
+    defaultPts = 400000;
+
+    defaultP = 10;
+    datasetPath = "/data/dbscan/3D_spatial_network.txt";
+  }
+
+  if (IONO3D) {
+    setOfDataSize[0] = 100000;
+    setOfDataSize[1] = 200000;
+    setOfDataSize[2] = 400000;
+    setOfDataSize[3] = 800000;
+    setOfDataSize[4] = 1600000;
+
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 4;
+    defaultR = 1.5;
+    defaultPts = 400000;
+
+    defaultP = 30;
+    datasetPath = "/data/geodata/iono_20min_2Mpts_3D.txt";
+  }
+
+
+    // Different set of Eps
+    printf("################ EPS IMPACT ################\n");
+    for (int i = 0; i < 5; i++) {
+      runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin, defaultP);
+    }
+
+    // Different set of MinPts
+    printf("################ MINPTS IMPACT ################\n");
+    for (int i = 0; i < 5; i++) {
+      runDBSCAN(datasetPath, defaultPts, defaultR, setOfMinPts[i], defaultP);
+    }
   
     // Different set of Points
     printf("################ POINTS IMPACT ################\n");
     for (int i = 0; i < 5; i++) {
-      runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin);
+      runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin, defaultP);
     }
 
+
+    // setOfP[0] = 2;
+    // setOfP[1] = 4;
+    // setOfP[2] = 6;
+    // setOfP[3] = 8;
+    // setOfP[4] = 10;
+    
+    // printf("################ PARTITION - POINTS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   for (int j = 0; j < 5; j++) {
+    //     runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin, setOfP[j]);
+    //   }
+    // }
+
+    // printf("################ PARTITION - EPS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   for (int j = 0; j < 5; j++) {
+    //     runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin, setOfP[j]);
+    //   }
+    // }
   
 }

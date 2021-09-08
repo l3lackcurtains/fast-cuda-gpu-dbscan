@@ -143,11 +143,11 @@ int main(int, char **) {
     setOfDataSize[3] = 400000;
     setOfDataSize[4] = 800000;
 
-    setOfR[0] = 0.2;
-    setOfR[1] = 0.4;
-    setOfR[2] = 0.6;
-    setOfR[3] = 0.8;
-    setOfR[4] = 1;
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
 
     setOfMinPts[0] = 4;
     setOfMinPts[1] = 8;
@@ -156,7 +156,7 @@ int main(int, char **) {
     setOfMinPts[4] = 64;
 
     defaultMin = 8;
-    defaultR = 0.8;
+    defaultR = 1.25;
 
     defaultPts = 400000;
 

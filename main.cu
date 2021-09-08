@@ -33,7 +33,8 @@ int ImportDataset(char const *fname, double *dataset);
 **************************************************************************
 */
 int main(int argc, char **argv) {
-  
+
+ 
   char inputFname[500];
   if (argc != 2) {
     fprintf(stderr, "Please provide the dataset file path in the arguments\n");
@@ -71,11 +72,6 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaDeviceReset());
   gpuErrchk(cudaFree(0));
 
-  // Start the time
-  clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
-  float totalTime = 0.0;
-  float indexingTime = 0.0;
-  totalTimeStart = clock();
 
   /**
  **************************************************************************
@@ -111,7 +107,7 @@ int main(int argc, char **argv) {
  **************************************************************************
  */
 
-  indexingStart = clock();
+ 
 
   int *d_indexTreeMetaData;
   int *d_results;
@@ -158,6 +154,13 @@ int main(int argc, char **argv) {
 * Initialize index structure
 **************************************************************************
 */
+// Start the time
+clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
+float totalTime = 0.0;
+
+totalTimeStart = clock();
+indexingStart = clock();
+
   double maxPoints[DIMENSION];
   double minPoints[DIMENSION];
 
@@ -253,6 +256,7 @@ int main(int argc, char **argv) {
          (sizeof(struct IndexStructure) * indexedStructureSize) /
              (1024 * 1024 * 1024.0));
 
+
   // Allocate memory for index buckets
   struct IndexStructure **d_indexBuckets, *d_currentIndexBucket;
 
@@ -298,6 +302,8 @@ int main(int argc, char **argv) {
 
 
   cudaDeviceSetLimit(cudaLimitMallocHeapSize, 16*1024*1024);
+
+  float indexingTime = 0.0;
   /**
  **************************************************************************
  * Start Indexing first
@@ -356,6 +362,7 @@ int main(int argc, char **argv) {
   float monitorTime = 0.0;
   float dbscanKernelTime = 0.0;
   float mergeTime = 0.0;
+  float newSeedTime = 0.0;
 
   while (!exit) {
 
@@ -364,7 +371,7 @@ int main(int argc, char **argv) {
     int completed =
         MonitorSeedPoints(unprocessedPoints, &runningCluster,
                           d_cluster, d_seedList, d_seedLength,
-                          d_collisionMatrix, d_extraCollision, d_results, &mergeTime);
+                          d_collisionMatrix, d_extraCollision, d_results, &mergeTime, &newSeedTime);
 
     // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
     //     unprocessedPoints.size());
@@ -416,8 +423,9 @@ int main(int argc, char **argv) {
   printf("==============================================\n");
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
   printf("Merge Time: %3.2f seconds\n", mergeTime);
-  printf("Communication Time: %3.2f seconds\n", monitorTime - mergeTime);
+  printf("New Seed Fill Time: %3.2f seconds\n", newSeedTime);
   printf("DBSCAN kernel Time: %3.2f seconds\n", dbscanKernelTime);
+  printf("Communication Time: %3.2f seconds\n", monitorTime - mergeTime - newSeedTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
 

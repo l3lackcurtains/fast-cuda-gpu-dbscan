@@ -99,7 +99,7 @@ void runTest(){
 			char* filename;
 			if(PORTO) filename = "/data/dbscan/Porto_taxi_data.csv";
 			if(SPATIAL) filename = "/data/dbscan/3D_spatial_network.txt";
-			if(NGSI) filename = "/data/dbscan/NGSIM_Data.txt";
+			if(NGSI) filename = "/home/mpoudel/datasets/NGSIM_Data.txt";
 			if(IONO2D) filename = "/data/geodata/iono_20min_2Mpts_2D.txt";
 			read_dataset(filename, &d_data, &h_data, max_pts_limit);
 			readOnce = true;
@@ -174,11 +174,11 @@ int main()
 		setOfDataSize[3] = 400000;
 		setOfDataSize[4] = 800000;
 	
-		setOfR[0] = 0.2;
-		setOfR[1] = 0.4;
-		setOfR[2] = 0.6;
-		setOfR[3] = 0.8;
-		setOfR[4] = 1;
+		setOfR[0] = 0.5;
+		setOfR[1] = 0.75;
+		setOfR[2] = 1;
+		setOfR[3] = 1.25;
+		setOfR[4] = 1.5;
 	
 		setOfMinPts[0] = 4;
 		setOfMinPts[1] = 8;
@@ -187,7 +187,7 @@ int main()
 		setOfMinPts[4] = 64;
 	
 		defaultMin = 8;
-		defaultR = 0.8;
+		defaultR = 1.25;
 	
 		defaultPts = 400000;
 	  }
@@ -243,33 +243,26 @@ int main()
 		defaultPts = 400000;
 	 }
 
-	RADIUS = defaultRStress;
-	MIN_POINTS = defaultMinStress;
-	NUM_NODES = defaultPts;
-	BLOCK_THREADS = 256;
-	NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
-	// runTest();
-
 	
-	// //Test impact of radius
-	// for(int i=0;i<rangeSize;i++){
-	//   RADIUS = setOfR[i];
-	//   MIN_POINTS = defaultMin;
-	//   NUM_NODES = defaultPts;
-	// 	BLOCK_THREADS = 256;
-	// 	NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
-	// 	runTest();
-	// }
+	//Test impact of radius
+	for(int i=0;i<rangeSize;i++){
+	 	RADIUS = setOfR[i];
+	  	MIN_POINTS = defaultMin;
+	  	NUM_NODES = defaultPts;
+		BLOCK_THREADS = 256;
+		NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
+		runTest();
+	}
 
-	// //Test impact of minPts
-	// for(int i=0;i<rangeSize;i++){
-	// 	RADIUS = defaultR;
-	// 	MIN_POINTS = setOfMinPts[i];
-	// 	NUM_NODES = defaultPts;
-	// 	  BLOCK_THREADS = 256;
-	// 	  NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
-	// 	  runTest();
-	//   }
+	//Test impact of minPts
+	for(int i=0;i<rangeSize;i++){
+		RADIUS = defaultR;
+		MIN_POINTS = setOfMinPts[i];
+		NUM_NODES = defaultPts;
+		  BLOCK_THREADS = 256;
+		  NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
+		  runTest();
+	  }
 
 //	//Test impact of points
 	for(int i=0;i<rangeSize;i++){
@@ -280,6 +273,5 @@ int main()
 		NUM_BLOCKS = (NUM_NODES/BLOCK_THREADS) +1;
 		runTest();
 	}
-
 
 }

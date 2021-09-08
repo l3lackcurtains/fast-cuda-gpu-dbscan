@@ -33,6 +33,8 @@ int ImportDataset(char const *fname, double *dataset);
 **************************************************************************
 */
 int main(int argc, char **argv) {
+
+ 
   char inputFname[500];
   if (argc != 2) {
     fprintf(stderr, "Please provide the dataset file path in the arguments\n");
@@ -55,7 +57,7 @@ int main(int argc, char **argv) {
 
   // Check if the data parsed is correct
   for (int i = 0; i < DIMENSION; i++) {
-    printf("Sample Data %f\n", importedDataset[i]);
+    printf("Sample Data %lf\n", importedDataset[i]);
   }
 
   // Get the total count of dataset
@@ -70,11 +72,6 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaDeviceReset());
   gpuErrchk(cudaFree(0));
 
-  // Start the time
-  clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
-  float totalTime = 0.0;
-  float indexingTime = 0.0;
-  totalTimeStart = clock();
 
   /**
  **************************************************************************
@@ -87,9 +84,7 @@ int main(int argc, char **argv) {
   int *d_seedLength;
   int *d_collisionMatrix;
   int *d_extraCollision;
-  int *d_clusterMap;
-  int *d_clusterCountMap;
- 
+
   gpuErrchk(cudaMalloc((void **)&d_dataset,
                        sizeof(double) * DATASET_COUNT * DIMENSION));
 
@@ -106,21 +101,18 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_extraCollision,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
-  gpuErrchk(cudaMalloc((void **)&d_clusterMap, sizeof(int) * THREAD_BLOCKS));
-  gpuErrchk(cudaMalloc((void **)&d_clusterCountMap, sizeof(int) * THREAD_BLOCKS));
-  
-
   /**
  **************************************************************************
  * Indexing Memory allocation
  **************************************************************************
  */
 
-  indexingStart = clock();
+ 
 
   int *d_indexTreeMetaData;
   int *d_results;
   double *d_minPoints;
+  double *d_maxPoints;
   double *d_binWidth;
 
   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData,
@@ -130,6 +122,7 @@ int main(int argc, char **argv) {
                        sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   gpuErrchk(cudaMalloc((void **)&d_minPoints, sizeof(double) * DIMENSION));
+  gpuErrchk(cudaMalloc((void **)&d_maxPoints, sizeof(double) * DIMENSION));
 
   gpuErrchk(cudaMalloc((void **)&d_binWidth, sizeof(double) * DIMENSION));
 
@@ -158,14 +151,18 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMemset(d_extraCollision, -1,
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
-  gpuErrchk(cudaMemset(d_clusterMap, -1, sizeof(int) * THREAD_BLOCKS));
-  gpuErrchk(cudaMemset(d_clusterCountMap, -1, sizeof(int) * THREAD_BLOCKS));
-
   /**
-**************************************************************************
-* Initialize index structure
-**************************************************************************
-*/
+  **************************************************************************
+  * Initialize index structure
+  **************************************************************************
+  */
+  // Start the time
+  clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
+  float totalTime = 0.0;
+
+  totalTimeStart = clock();
+  indexingStart = clock();
+
   double maxPoints[DIMENSION];
   double minPoints[DIMENSION];
 
@@ -217,7 +214,7 @@ int main(int argc, char **argv) {
   }
 
   int childItems[TREE_LEVELS];
-  int indexTreeMetaData[TREE_LEVELS * RANGE];
+  int startEndIndexes[TREE_LEVELS * RANGE];
 
   int mulx = 1;
   for (int k = 0; k < TREE_LEVELS; k++) {
@@ -227,39 +224,42 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < TREE_LEVELS; i++) {
     if (i == 0) {
-      indexTreeMetaData[i * RANGE + 0] = 0;
-      indexTreeMetaData[i * RANGE + 1] = 1;
+      startEndIndexes[i * RANGE + 0] = 0;
+      startEndIndexes[i * RANGE + 1] = 1;
       continue;
     }
-    indexTreeMetaData[i * RANGE + 0] = indexTreeMetaData[((i - 1) * RANGE) + 1];
-    indexTreeMetaData[i * RANGE + 1] = indexTreeMetaData[i * RANGE + 0];
+    startEndIndexes[i * RANGE + 0] = startEndIndexes[((i - 1) * RANGE) + 1];
+    startEndIndexes[i * RANGE + 1] = startEndIndexes[i * RANGE + 0];
     for (int k = 0; k < childItems[i - 1]; k++) {
-      indexTreeMetaData[i * RANGE + 1] += treeLevelPartition[i];
+      startEndIndexes[i * RANGE + 1] += treeLevelPartition[i];
     }
   }
 
   for (int i = 0; i < TREE_LEVELS; i++) {
     printf("#%d ", i);
     printf("Partition: %d ", treeLevelPartition[i]);
-    printf("Range: %d %d\n", indexTreeMetaData[i * RANGE + 0],
-           indexTreeMetaData[i * RANGE + 1]);
+    printf("Range: %d %d\n", startEndIndexes[i * RANGE + 0],
+           startEndIndexes[i * RANGE + 1]);
   }
   printf("==============================================\n");
 
   gpuErrchk(cudaMemcpy(d_minPoints, minPoints, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(d_maxPoints, maxPoints, sizeof(double) * DIMENSION,
+  cudaMemcpyHostToDevice));
   gpuErrchk(cudaMemcpy(d_binWidth, binWidth, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
 
-  gpuErrchk(cudaMemcpy(d_indexTreeMetaData, indexTreeMetaData,
+  gpuErrchk(cudaMemcpy(d_indexTreeMetaData, startEndIndexes,
                        sizeof(int) * TREE_LEVELS * RANGE,
                        cudaMemcpyHostToDevice));
 
-  int indexedStructureSize = indexTreeMetaData[DIMENSION * RANGE + 1];
+  int indexedStructureSize = startEndIndexes[DIMENSION * RANGE + 1];
 
   printf("Index Structure Size: %lf GB.\n",
          (sizeof(struct IndexStructure) * indexedStructureSize) /
              (1024 * 1024 * 1024.0));
+
 
   // Allocate memory for index buckets
   struct IndexStructure **d_indexBuckets, *d_currentIndexBucket;
@@ -303,6 +303,11 @@ int main(int argc, char **argv) {
   gpuErrchk(cudaMalloc((void **)&d_dataValue, sizeof(int) * DATASET_COUNT));
   gpuErrchk(cudaMalloc((void **)&d_upperBounds,
                        sizeof(double) * indexedStructureSize));
+
+
+  cudaDeviceSetLimit(cudaLimitMallocHeapSize, 16*1024*1024);
+
+  float indexingTime = 0.0;
   /**
  **************************************************************************
  * Start Indexing first
@@ -310,8 +315,10 @@ int main(int argc, char **argv) {
  */
   gpuErrchk(cudaDeviceSynchronize());
 
-  INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_dataset, d_indexTreeMetaData, d_minPoints, d_binWidth, d_results,
+  
+
+  INDEXING_STRUCTURE_TEST<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
+      d_dataset, d_indexTreeMetaData, d_minPoints, d_maxPoints, d_binWidth, d_results,
       d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
 
@@ -345,12 +352,7 @@ int main(int argc, char **argv) {
  */
 
   // Keep track of number of cluster formed without global merge
-  int* runningCluster = (int*)malloc(sizeof(int));
-  runningCluster[0] = THREAD_BLOCKS;
-
-  int *d_runningCluster;
-  gpuErrchk(cudaMalloc((void **)&d_runningCluster, sizeof(int)));
-  gpuErrchk(cudaMemcpy(d_runningCluster, runningCluster, sizeof(int), cudaMemcpyHostToDevice));
+  int runningCluster = THREAD_BLOCKS;
   // Global cluster count
   int clusterCount = 0;
 
@@ -360,20 +362,26 @@ int main(int argc, char **argv) {
   // Handler to conmtrol the while loop
   bool exit = false;
 
-  while (!exit) {
-    
-    // Kernel function to expand the seed list
-    gpuErrchk(cudaDeviceSynchronize());
-    DBSCAN_ONE_INSTANCE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
-      d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-      d_dataValue, d_upperBounds, d_binWidth);
-    gpuErrchk(cudaDeviceSynchronize());
+  clock_t monitorStart, monitorStop, dbscanKernelStart, dbscanKernelStop;
+  float monitorTime = 0.0;
+  float dbscanKernelTime = 0.0;
+  float mergeTime = 0.0;
+  float newSeedTime = 0.0;
 
+  while (!exit) {
+
+    monitorStart = clock();
     // Monitor the seed list and return the comptetion status of points
     int completed =
-        TestMonitorSeedPoints(unprocessedPoints, d_cluster, d_seedList, d_seedLength,
-                          d_collisionMatrix, d_extraCollision, d_results, d_clusterMap, d_clusterCountMap, d_runningCluster);
+        MonitorSeedPoints(unprocessedPoints, &runningCluster,
+                          d_cluster, d_seedList, d_seedLength,
+                          d_collisionMatrix, d_extraCollision, d_results, &mergeTime, &newSeedTime);
+
+    // printf("Running cluster %d, unprocessed points: %lu\n", runningCluster,
+    //     unprocessedPoints.size());
+
+    monitorStop = clock();
+    monitorTime += (float)(monitorStop - monitorStart) / CLOCKS_PER_SEC;
 
     // If all points are processed, exit
     if (completed) {
@@ -381,6 +389,19 @@ int main(int argc, char **argv) {
     }
 
     if (exit) break;
+
+    dbscanKernelStart = clock();
+
+    // Kernel function to expand the seed list
+    gpuErrchk(cudaDeviceSynchronize());
+    DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
+        d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
+        d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
+        d_dataValue, d_upperBounds, d_binWidth);
+    gpuErrchk(cudaDeviceSynchronize());
+
+    dbscanKernelStop = clock();
+    dbscanKernelTime += (float)(dbscanKernelStop - dbscanKernelStart) / CLOCKS_PER_SEC;
   }
 
   /**
@@ -395,7 +416,7 @@ int main(int argc, char **argv) {
   printf("DBSCAN completed. Calculating clusters...\n");
   
   // Get the DBSCAN result
-  TestGetDbscanResult(d_cluster, runningCluster, &clusterCount, &noiseCount);
+  GetDbscanResult(d_cluster, &runningCluster, &clusterCount, &noiseCount);
   
   totalTime = (float)(totalTimeStop - totalTimeStart) / CLOCKS_PER_SEC;
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
@@ -405,6 +426,10 @@ int main(int argc, char **argv) {
   printf("Number of noises: %d\n", noiseCount);
   printf("==============================================\n");
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
+  printf("Merge Time: %3.2f seconds\n", mergeTime);
+  printf("New Seed Fill Time: %3.2f seconds\n", newSeedTime);
+  printf("DBSCAN kernel Time: %3.2f seconds\n", dbscanKernelTime);
+  printf("Communication Time: %3.2f seconds\n", monitorTime - mergeTime - newSeedTime);
   printf("Total Time: %3.2f seconds\n", totalTime);
   printf("==============================================\n");
 
@@ -450,8 +475,8 @@ int ImportDataset(char const *fname, double *dataset) {
   unsigned long int cnt = 0;
   while (fgets(buf, 4096, fp) && cnt < DATASET_COUNT * DIMENSION) {
     char *field = strtok(buf, ",");
-    long double tmp;
-    sscanf(field, "%Lf", &tmp);
+    double tmp;
+    sscanf(field, "%lf", &tmp);
     dataset[cnt] = tmp;
     cnt++;
 
@@ -459,8 +484,8 @@ int ImportDataset(char const *fname, double *dataset) {
       field = strtok(NULL, ",");
 
       if (field != NULL) {
-        long double tmp;
-        sscanf(field, "%Lf", &tmp);
+        double tmp;
+        sscanf(field, "%lf", &tmp);
         dataset[cnt] = tmp;
         cnt++;
       }

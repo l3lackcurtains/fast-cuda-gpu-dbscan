@@ -112,10 +112,10 @@ void processPointCPU(int numPoints, point *masterDataArray, real radius,
   float otherX, otherY, distX, distY, Distance;
   unsigned int NumOfCandidates;
 
-  const int numThreads = 4;
+  const int numThreads = 16;
   unsigned int threadNeighbors[numThreads] = {0};
   omp_set_num_threads(numThreads);
-  // cout<<"Threads are "<<omp_get_num_threads()<<endl;
+  // cout << "Threads are " << omp_get_num_threads() << endl;
 
 #pragma omp parallel for private(otherX, otherY, distX, distY, Distance, \
                                  NumOfCandidates)
@@ -215,9 +215,9 @@ void read_dataset(char *filename, traj_data_t **d_data, traj_data_t **h_data,
   preprocess_data(filename, h_data, max_pts_limit, 1);
 }
 
-#define PORTO 0
+#define PORTO 1
 #define SPATIAL 0
-#define NGSI 1
+#define NGSI 0
 #define IONO2D 0
 
 ////////////////////////////////////////////////////////////////
@@ -263,7 +263,7 @@ int main(int argc, char *argv[]) {
 
   if (PORTO) filename = "/data/dbscan/Porto_taxi_data.csv";
   if (SPATIAL) filename = "/data/dbscan/3D_spatial_network.txt";
-  if (NGSI) filename = "/data/dbscan/NGSIM_Data.txt";
+  if (NGSI) filename = "/home/mpoudel/datasets/NGSIM_Data.txt";
   if (IONO2D) filename = "/data/geodata/iono_20min_2Mpts_2D.txt";
 
   gettimeofday(&(report[current].total_time_begin), NULL);
@@ -310,11 +310,11 @@ int main(int argc, char *argv[]) {
     setOfDataSize[3] = 400000;
     setOfDataSize[4] = 800000;
 
-    setOfR[0] = 0.2;
-    setOfR[1] = 0.4;
-    setOfR[2] = 0.6;
-    setOfR[3] = 0.8;
-    setOfR[4] = 1;
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
 
     setOfMinPts[0] = 4;
     setOfMinPts[1] = 8;
@@ -323,7 +323,7 @@ int main(int argc, char *argv[]) {
     setOfMinPts[4] = 64;
 
     defaultMin = 8;
-    defaultR = 0.8;
+    defaultR = 1.25;
 
     defaultPts = 400000;
   }

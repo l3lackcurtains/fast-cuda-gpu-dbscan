@@ -16,8 +16,8 @@ using namespace std;
 #define MAX_SEEDS 128
 #define EXTRA_COLLISION_SIZE 512
 
-// #define DATASET_COUNT 1864620
-#define DATASET_COUNT 100000
+// #define DATASET_COUNT 10000
+#define DATASET_COUNT 1864620
 
 #define MINPTS 4
 #define EPS 1.5
