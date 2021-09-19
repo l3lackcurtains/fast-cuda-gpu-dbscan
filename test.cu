@@ -317,7 +317,7 @@ int main(int argc, char **argv) {
 
   
 
-  INDEXING_STRUCTURE_TEST<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
+  INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
       d_dataset, d_indexTreeMetaData, d_minPoints, d_maxPoints, d_binWidth, d_results,
       d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
@@ -394,7 +394,7 @@ int main(int argc, char **argv) {
 
     // Kernel function to expand the seed list
     gpuErrchk(cudaDeviceSynchronize());
-    DBSCAN_TEST<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
+    DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
         d_dataValue, d_upperBounds, d_binWidth, d_minPoints, d_maxPoints);

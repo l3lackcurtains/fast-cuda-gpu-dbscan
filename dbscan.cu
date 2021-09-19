@@ -20,144 +20,6 @@
 #include "indexing.h"
 #include "dbscan.h"
 
-__global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
-                       int *seedLength, int *collisionMatrix,
-                       int *extraCollision, int *results,
-                       struct IndexStructure **indexBuckets,
-
-                       int *indexesStack, int *dataValue, double *upperBounds,
-                       double *binWidth) {
-  // Point ID to expand by a block
-  __shared__ int pointID;
-
-  // Neighbors to store of neighbors points exceeds minpoints
-  __shared__ int neighborBuffer[MINPTS];
-
-  // It counts the total neighbors
-  __shared__ int neighborCount;
-
-  // ChainID is basically blockID
-  __shared__ int chainID;
-
-  // Store the point from pointID
-  __shared__ double point[DIMENSION];
-
-  // Length of the seedlist to check its size
-  __shared__ int currentSeedLength;
-
-  __shared__ int resultId;
-
-  if (threadIdx.x == 0) {
-    chainID = blockIdx.x;
-    currentSeedLength = seedLength[chainID];
-    pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
-  }
-  __syncthreads();
-
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  for (int x = threadId; x < THREAD_BLOCKS * THREAD_BLOCKS;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    collisionMatrix[x] = UNPROCESSED;
-  }
-  for (int x = threadId; x < THREAD_BLOCKS * EXTRA_COLLISION_SIZE;
-       x = x + THREAD_BLOCKS * THREAD_COUNT) {
-    extraCollision[x] = UNPROCESSED;
-  }
-
-  __syncthreads();
-
-  // Complete the seedlist to proceed.
-
-  while (seedLength[chainID] != 0) {
-    for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
-         x = x + THREAD_BLOCKS * THREAD_COUNT) {
-      results[x] = UNPROCESSED;
-    }
-    __syncthreads();
-
-    // Assign chainID, current seed length and pointID
-    if (threadIdx.x == 0) {
-      chainID = blockIdx.x;
-      currentSeedLength = seedLength[chainID];
-      pointID = seedList[chainID * MAX_SEEDS + currentSeedLength - 1];
-    }
-    __syncthreads();
-
-    // Check if the point is already processed
-    if (threadIdx.x == 0) {
-      seedLength[chainID] = currentSeedLength - 1;
-      neighborCount = 0;
-      for (int x = 0; x < DIMENSION; x++) {
-        point[x] = dataset[pointID * DIMENSION + x];
-      }
-    }
-    __syncthreads();
-
-    ///////////////////////////////////////////////////////////////////////////////////
-
-    searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
-                 dataValue, upperBounds, binWidth);
-
-    __syncthreads();
-
-    for (int k = 0; k < POINTS_SEARCHED; k++) {
-      if (threadIdx.x == 0) {
-        resultId = results[chainID * POINTS_SEARCHED + k];
-      }
-      __syncthreads();
-
-      if (resultId == -1) break;
-
-      for (int i = threadIdx.x + indexBuckets[resultId]->dataBegin;
-           i < indexBuckets[resultId]->dataEnd; i = i + THREAD_COUNT) {
-        register double comparingPoint[DIMENSION];
-
-        for (int x = 0; x < DIMENSION; x++) {
-          comparingPoint[x] = dataset[dataValue[i] * DIMENSION + x];
-        }
-
-        register double distance = 0;
-        for (int x = 0; x < DIMENSION; x++) {
-          distance +=
-              (point[x] - comparingPoint[x]) * (point[x] - comparingPoint[x]);
-        }
-
-        if (distance <= EPS * EPS) {
-          register int currentNeighborCount = atomicAdd(&neighborCount, 1);
-          if (currentNeighborCount >= MINPTS) {
-            MarkAsCandidate(dataValue[i], chainID, cluster, seedList,
-                            seedLength, collisionMatrix, extraCollision);
-          } else {
-            neighborBuffer[currentNeighborCount] = dataValue[i];
-          }
-        }
-      }
-      __syncthreads();
-    }
-    __syncthreads();
-
-    ///////////////////////////////////////////////////////////////////////////////////
-
-    if (neighborCount >= MINPTS) {
-      cluster[pointID] = chainID;
-      for (int i = threadIdx.x; i < MINPTS; i = i + THREAD_COUNT) {
-        MarkAsCandidate(neighborBuffer[i], chainID, cluster, seedList,
-                        seedLength, collisionMatrix, extraCollision);
-      }
-    } else {
-      cluster[pointID] = NOISE;
-    }
-
-    __syncthreads();
-    ///////////////////////////////////////////////////////////////////////////////////
-
-    if (threadIdx.x == 0 && seedLength[chainID] >= MAX_SEEDS) {
-      seedLength[chainID] = MAX_SEEDS - 1;
-    }
-    __syncthreads();
-  }
-}
-
 bool MonitorSeedPoints(vector<int> &unprocessedPoints, int *runningCluster,
                        int *d_cluster, int *d_seedList, int *d_seedLength,
                        int *d_collisionMatrix, int *d_extraCollision,
@@ -357,82 +219,6 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
   }
 }
 
-__device__ void searchPoints(double *data, int chainID, double *dataset,
-                             int *results, struct IndexStructure **indexBuckets,
-                             int *indexesStack, int *dataValue,
-                             double *upperBounds, double *binWidth) {
-  __shared__ int resultsCount;
-  __shared__ int indexBucketSize;
-  __shared__ int currentIndex;
-  __shared__ int currentIndexSize;
-  __shared__ double comparingData;
-
-  if (threadIdx.x == 0) {
-    resultsCount = 0;
-    indexBucketSize = 1;
-    for (int i = 0; i < DIMENSION; i++) {
-      indexBucketSize *= 3;
-    }
-    indexBucketSize = indexBucketSize * chainID;
-    currentIndexSize = indexBucketSize;
-    indexesStack[currentIndexSize++] = 0;
-  }
-  __syncthreads();
-
-  while (currentIndexSize > indexBucketSize) {
-    if (threadIdx.x == 0) {
-      currentIndexSize = currentIndexSize - 1;
-      currentIndex = indexesStack[currentIndexSize];
-      comparingData = data[indexBuckets[currentIndex]->dimension];
-    }
-    __syncthreads();
-
-    for (int k = threadIdx.x + indexBuckets[currentIndex]->childFrom;
-         k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE;
-         k = k + THREAD_COUNT) {
-      double leftRange;
-      double rightRange;
-      if (k == indexBuckets[currentIndex]->childFrom) {
-        leftRange =
-            upperBounds[k] - binWidth[indexBuckets[currentIndex]->dimension];
-      } else {
-        leftRange = upperBounds[k - 1];
-      }
-
-      rightRange = upperBounds[k];
-
-      if (comparingData >= leftRange && comparingData < rightRange) {
-        if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-          int oldResultsCount = atomicAdd(&resultsCount, 1);
-          results[chainID * POINTS_SEARCHED + oldResultsCount] = k;
-
-          if (k > indexBuckets[currentIndex]->childFrom) {
-            oldResultsCount = atomicAdd(&resultsCount, 1);
-            results[chainID * POINTS_SEARCHED + oldResultsCount] = k - 1;
-          }
-
-          if (k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE - 1) {
-            oldResultsCount = atomicAdd(&resultsCount, 1);
-            results[chainID * POINTS_SEARCHED + oldResultsCount] = k + 1;
-          }
-        } else {
-          int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
-          indexesStack[oldCurrentIndexSize] = k;
-          if (k > indexBuckets[currentIndex]->childFrom) {
-            int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
-            indexesStack[oldCurrentIndexSize] = k - 1;
-          }
-          if (k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE - 1) {
-            int oldCurrentIndexSize = atomicAdd(&currentIndexSize, 1);
-            indexesStack[oldCurrentIndexSize] = k + 1;
-          }
-        }
-      }
-    }
-
-    __syncthreads();
-  }
-}
 
 void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
                      int *noiseCount) {
@@ -463,7 +249,7 @@ void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
 }
 
 
-__global__ void DBSCAN_TEST(double *dataset, int *cluster, int *seedList,
+__global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                        int *seedLength, int *collisionMatrix,
                        int *extraCollision, int *results,
                        struct IndexStructure **indexBuckets,
@@ -537,7 +323,7 @@ __global__ void DBSCAN_TEST(double *dataset, int *cluster, int *seedList,
 
     ///////////////////////////////////////////////////////////////////////////////////
 
-    searchPoints_TEST(point, chainID, dataset, results, indexBuckets, indexesStack,
+    searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
                  dataValue, upperBounds, binWidth, minPoints, maxPoints);
 
     __syncthreads();
@@ -601,7 +387,7 @@ __global__ void DBSCAN_TEST(double *dataset, int *cluster, int *seedList,
 }
 
 
-__device__ void searchPoints_TEST(double *data, int chainID, double *dataset,
+__device__ void searchPoints(double *data, int chainID, double *dataset,
                                   int *results,
                                   struct IndexStructure **indexBuckets,
                                   int *indexesStack, int *dataValue,

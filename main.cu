@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
   int *d_indexTreeMetaData;
   int *d_results;
   double *d_minPoints;
+  double *d_maxPoints;
   double *d_binWidth;
 
   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData,
@@ -121,6 +122,7 @@ int main(int argc, char **argv) {
                        sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   gpuErrchk(cudaMalloc((void **)&d_minPoints, sizeof(double) * DIMENSION));
+  gpuErrchk(cudaMalloc((void **)&d_maxPoints, sizeof(double) * DIMENSION));
 
   gpuErrchk(cudaMalloc((void **)&d_binWidth, sizeof(double) * DIMENSION));
 
@@ -150,16 +152,16 @@ int main(int argc, char **argv) {
                        sizeof(int) * THREAD_BLOCKS * EXTRA_COLLISION_SIZE));
 
   /**
-**************************************************************************
-* Initialize index structure
-**************************************************************************
-*/
-// Start the time
-clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
-float totalTime = 0.0;
+  **************************************************************************
+  * Initialize index structure
+  **************************************************************************
+  */
+  // Start the time
+  clock_t totalTimeStart, totalTimeStop, indexingStart, indexingStop;
+  float totalTime = 0.0;
 
-totalTimeStart = clock();
-indexingStart = clock();
+  totalTimeStart = clock();
+  indexingStart = clock();
 
   double maxPoints[DIMENSION];
   double minPoints[DIMENSION];
@@ -243,6 +245,8 @@ indexingStart = clock();
 
   gpuErrchk(cudaMemcpy(d_minPoints, minPoints, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(d_maxPoints, maxPoints, sizeof(double) * DIMENSION,
+  cudaMemcpyHostToDevice));
   gpuErrchk(cudaMemcpy(d_binWidth, binWidth, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
 
@@ -314,12 +318,12 @@ indexingStart = clock();
   
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_dataset, d_indexTreeMetaData, d_minPoints, d_binWidth, d_results,
+      d_dataset, d_indexTreeMetaData, d_minPoints, d_maxPoints, d_binWidth, d_results,
       d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
 
   cudaFree(d_indexTreeMetaData);
-  cudaFree(d_minPoints);
+  
 
   /**
  **************************************************************************
@@ -393,7 +397,7 @@ indexingStart = clock();
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_extraCollision, d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth);
+        d_dataValue, d_upperBounds, d_binWidth, d_minPoints, d_maxPoints);
     gpuErrchk(cudaDeviceSynchronize());
 
     dbscanKernelStop = clock();
@@ -450,6 +454,10 @@ indexingStart = clock();
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
+
+
+  cudaFree(d_minPoints);
+  cudaFree(d_maxPoints);
 }
 
 /**

@@ -8,8 +8,8 @@
 #include "report.h"
 
 #define PORTO 0
-#define SPATIAL 0
-#define NGSI 1
+#define SPATIAL 1
+#define NGSI 0
 #define IONO2D 0
 
 int NUM_NODES;

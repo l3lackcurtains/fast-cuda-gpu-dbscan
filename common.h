@@ -16,13 +16,13 @@ using namespace std;
 #define MAX_SEEDS 128
 #define EXTRA_COLLISION_SIZE 512
 
-// #define DATASET_COUNT 10000
+// #define DATASET_COUNT 10000000
 #define DATASET_COUNT 1864620
 
 #define MINPTS 4
 #define EPS 1.5
 
-#define PARTITION_SIZE 50
+#define PARTITION_SIZE 70
 #define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////

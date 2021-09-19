@@ -30,19 +30,19 @@ using namespace std;
 
 #define MAX_SEEDS 1024
 
-__managed__ int MINPTS = 8;
-__managed__ double EPS = 0.8;
+__managed__ int MINPTS = 4;
+__managed__ double EPS = 1.5;
 __managed__ int DATASET_COUNT = 400000;
-__managed__ int PARTITION_SIZE = 100;
+__managed__ int PARTITION_SIZE = 80;
 
 #define POINTS_SEARCHED 9
 
-#define PORTO 0
+#define PORTO 1
 #define SPATIAL 0
-#define NGSI 1
+#define NGSI 0
 #define IONO2D 0
-#define IONO3D 0
 #define SPATIAL3D 0
+#define IONO3D 0
 
 struct __align__(8) IndexStructure {
   int dimension;
@@ -89,37 +89,40 @@ __global__ void DBSCAN(double* dataset, int* cluster, int* seedList,
                        int* seedLength, int* collisionMatrix,
                        int* results,
                        struct IndexStructure** indexBuckets,
-
                        int* indexesStack, int* dataValue, double* upperBounds,
-                       double* binWidth);
+                       double* binWidth, double *minPoints, double *maxPoints);
 
 __device__ void MarkAsCandidate(int neighborID, int chainID, int* cluster,
                                 int* seedList, int* seedLength, int* collisionMatrix);
 
+                                __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
+                                    struct IndexStructure **indexBuckets,
+                                    int *dataKey);
+
 __global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
-                                  double *minPoints, double *binWidth,
-                                  int *results,
-                                  struct IndexStructure **indexBuckets,
-                                  int *dataKey, int *dataValue,
-                                  double *upperBounds);
-
-__global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
-                                   struct IndexStructure **indexBuckets,
-                                   int *dataKey);
-
-__device__ void indexConstruction(int dimension, int *indexTreeMetaData,
-                                 double *minPoints, double *binWidth,
-                                 struct IndexStructure **indexBuckets,
-                                 double *upperBounds);
+                                        double *minPoints, double *maxPoints,
+                                        double *binWidth, int *results,
+                                        struct IndexStructure **indexBuckets,
+                                        int *dataKey, int *dataValue,
+                                        double *upperBounds);
 
 __device__ void insertData(int id, double *dataset,
-                          struct IndexStructure **indexBuckets, int *dataKey,
-                          int *dataValue, double *upperBounds,
-                          double *binWidth);
+                                struct IndexStructure **indexBuckets,
+                                int *dataKey, int *dataValue,
+                                double *upperBounds, double *binWidth,
+                                double *minPoints, double *maxPoints);
+
+__device__ void indexConstruction(int level, int *indexTreeMetaData,
+                                       double *minPoints, double *binWidth,
+                                       struct IndexStructure **indexBuckets,
+                                       double *upperBounds);
 
 __device__ void searchPoints(double *data, int chainID, double *dataset,
-                            int *results, struct IndexStructure **indexBuckets, int *indexesStack, int *dataValue,
-                            double *upperBounds, double *binWidth);
+                                  int *results,
+                                  struct IndexStructure **indexBuckets,
+                                  int *indexesStack, int *dataValue,
+                                  double *upperBounds, double *binWidth,
+                                  double *minPoints, double *maxPoints);
 
 
 
@@ -195,6 +198,7 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
   int *d_indexTreeMetaData;
   int *d_results;
   double *d_minPoints;
+  double *d_maxPoints;
   double *d_binWidth;
 
   gpuErrchk(cudaMalloc((void **)&d_indexTreeMetaData,
@@ -204,6 +208,7 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
                        sizeof(int) * THREAD_BLOCKS * POINTS_SEARCHED));
 
   gpuErrchk(cudaMalloc((void **)&d_minPoints, sizeof(double) * DIMENSION));
+  gpuErrchk(cudaMalloc((void **)&d_maxPoints, sizeof(double) * DIMENSION));
 
   gpuErrchk(cudaMalloc((void **)&d_binWidth, sizeof(double) * DIMENSION));
 
@@ -298,6 +303,8 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
 
   gpuErrchk(cudaMemcpy(d_minPoints, minPoints, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
+  gpuErrchk(cudaMemcpy(d_maxPoints, maxPoints, sizeof(double) * DIMENSION,
+  cudaMemcpyHostToDevice));
   gpuErrchk(cudaMemcpy(d_binWidth, binWidth, sizeof(double) * DIMENSION,
                        cudaMemcpyHostToDevice));
 
@@ -360,12 +367,12 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
   gpuErrchk(cudaDeviceSynchronize());
 
   INDEXING_STRUCTURE<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
-      d_dataset, d_indexTreeMetaData, d_minPoints, d_binWidth, d_results,
+      d_dataset, d_indexTreeMetaData, d_minPoints, d_maxPoints, d_binWidth, d_results,
       d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
 
   cudaFree(d_indexTreeMetaData);
-  cudaFree(d_minPoints);
+  
 
   /**
  **************************************************************************
@@ -432,7 +439,7 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
     DBSCAN<<<dim3(THREAD_BLOCKS, 1), dim3(THREAD_COUNT, 1)>>>(
         d_dataset, d_cluster, d_seedList, d_seedLength, d_collisionMatrix,
         d_results, d_indexBuckets, d_indexesStack,
-        d_dataValue, d_upperBounds, d_binWidth);
+        d_dataValue, d_upperBounds, d_binWidth, d_minPoints, d_maxPoints);
     gpuErrchk(cudaDeviceSynchronize());
 
     dbscanKernelStop = clock();
@@ -453,7 +460,7 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
   indexingTime = (float)(indexingStop - indexingStart) / CLOCKS_PER_SEC;
 
   printf("==============================================\n");
-  printf("Dataset: %d\nEPS: %f\nMINPTS: %d\n", DATASET_COUNT, EPS, MINPTS);
+  printf("Dataset: %d\nEPS: %f\nMINPTS: %d\nPARTITION: %d\n", DATASET_COUNT, EPS, MINPTS, PARTITION_SIZE);
   printf("Final cluster after merging: %d\n", clusterCount);
   printf("Number of noises: %d\n", noiseCount);
   printf("Indexing Time: %3.2f seconds\n", indexingTime);
@@ -482,6 +489,9 @@ void runDBSCAN(const char* filename, int datasetSize, double eps, int minPts, in
   cudaFree(d_dataValue);
   cudaFree(d_upperBounds);
   cudaFree(d_binWidth);
+
+  cudaFree(d_minPoints);
+  cudaFree(d_maxPoints);
 }
 
 
@@ -490,7 +500,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
                       int *results,
                        struct IndexStructure **indexBuckets,
                        int *indexesStack, int *dataValue, double *upperBounds,
-                       double *binWidth) {
+                       double *binWidth, double *minPoints, double *maxPoints) {
   // Point ID to expand by a block
   __shared__ int pointID;
 
@@ -532,7 +542,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     ///////////////////////////////////////////////////////////////////////////////////
 
     searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
-                 dataValue, upperBounds, binWidth);
+                 dataValue, upperBounds, binWidth, minPoints, maxPoints);
 
     __syncthreads();
 
@@ -761,10 +771,39 @@ __device__ void MarkAsCandidate(int neighborID, int chainID, int *cluster,
   }
 }
 
+void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
+                     int *noiseCount) {
+  *noiseCount = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, NOISE);
+  int *d_localCluster;
+  gpuErrchk(cudaMalloc((void **)&d_localCluster, sizeof(int) * DATASET_COUNT));
+  thrust::copy(thrust::device, d_cluster, d_cluster + DATASET_COUNT, d_localCluster);
+  thrust::sort(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT);
+  *clusterCount = thrust::unique(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT) - d_localCluster - 1;
+  
+
+
+  int *localCluster;
+  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
+  gpuErrchk(cudaMemcpy(localCluster, d_localCluster, sizeof(int) * DATASET_COUNT,
+                        cudaMemcpyDeviceToHost));
+  ofstream outputFile;
+  outputFile.open("./out/cuda_dclust_extended.txt");
+  for (int j = 0; j < DATASET_COUNT; j++) {
+    outputFile << localCluster[j] << endl;
+  }
+  outputFile.close();
+  free(localCluster);
+
+
+  cudaFree(d_localCluster);
+}
+
 __device__ void searchPoints(double *data, int chainID, double *dataset,
-                             int *results, struct IndexStructure **indexBuckets,
-                             int *indexesStack, int *dataValue,
-                             double *upperBounds, double *binWidth) {
+                                  int *results,
+                                  struct IndexStructure **indexBuckets,
+                                  int *indexesStack, int *dataValue,
+                                  double *upperBounds, double *binWidth, double *minPoints, double *maxPoints) {
+
   __shared__ int resultsCount;
   __shared__ int indexBucketSize;
   __shared__ int currentIndex;
@@ -838,32 +877,7 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
   }
 }
 
-void GetDbscanResult(int *d_cluster, int *runningCluster, int *clusterCount,
-                     int *noiseCount) {
-  *noiseCount = thrust::count(thrust::device, d_cluster, d_cluster + DATASET_COUNT, NOISE);
-  int *d_localCluster;
-  gpuErrchk(cudaMalloc((void **)&d_localCluster, sizeof(int) * DATASET_COUNT));
-  thrust::copy(thrust::device, d_cluster, d_cluster + DATASET_COUNT, d_localCluster);
-  thrust::sort(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT);
-  *clusterCount = thrust::unique(thrust::device, d_localCluster, d_localCluster + DATASET_COUNT) - d_localCluster - 1;
-  
 
-
-  int *localCluster;
-  localCluster = (int *)malloc(sizeof(int) * DATASET_COUNT);
-  gpuErrchk(cudaMemcpy(localCluster, d_localCluster, sizeof(int) * DATASET_COUNT,
-                        cudaMemcpyDeviceToHost));
-  ofstream outputFile;
-  outputFile.open("./out/cuda_dclust_extended.txt");
-  for (int j = 0; j < DATASET_COUNT; j++) {
-    outputFile << localCluster[j] << endl;
-  }
-  outputFile.close();
-  free(localCluster);
-
-
-  cudaFree(d_localCluster);
-}
 
 __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
@@ -897,52 +911,18 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
 __device__ void insertData(int id, double *dataset,
                            struct IndexStructure **indexBuckets, int *dataKey,
                            int *dataValue, double *upperBounds,
-                           double *binWidth) {
-  double data[DIMENSION];
+                           double *binWidth, double *minPoints, double *maxPoints) {
+  int index = 0;
   for (int j = 0; j < DIMENSION; j++) {
-    data[j] = dataset[id * DIMENSION + j];
+    double x = dataset[id * DIMENSION + j];
+    int currentIndex = (x - minPoints[j]) / (maxPoints[j] - minPoints[j]) * PARTITION_SIZE + 1;
+    index = index * PARTITION_SIZE + currentIndex;
   }
 
-  int currentIndex = 0;
-  bool found = false;
-
-  while (!found) {
-    if (indexBuckets[currentIndex]->dimension >= DIMENSION) break;
-    double comparingData = data[indexBuckets[currentIndex]->dimension];
-
-    int k = thrust::upper_bound(thrust::device, upperBounds + indexBuckets[currentIndex]->childFrom,
-      upperBounds + indexBuckets[currentIndex]->childFrom + PARTITION_SIZE, comparingData, thrust::less<double>()) - upperBounds;
-
-    if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
-      dataValue[id] = id;
-      dataKey[id] = k;
-      found = true;
-    }
-    currentIndex = k;      
-  }
+  dataValue[id] = id;
+  dataKey[id] = index;
 }
 
-
-__global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
-                                   double *minPoints, double *binWidth,
-                                   int *results,
-                                   struct IndexStructure **indexBuckets,
-                                   int *dataKey, int *dataValue,
-                                   double *upperBounds) {
-  if (blockIdx.x < DIMENSION) {
-    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
-                      indexBuckets, upperBounds);
-  }
-  __syncthreads();
-
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-  for (int i = threadId; i < DATASET_COUNT;
-       i = i + THREAD_COUNT * THREAD_BLOCKS) {
-    insertData(i, dataset, indexBuckets, dataKey, dataValue, upperBounds,
-               binWidth);
-  }
-  __syncthreads();
-}
 
 __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
                                     struct IndexStructure **indexBuckets,
@@ -966,6 +946,28 @@ __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
 
     indexBuckets[idx]->dataBegin = dataPositioned.first - dataKey;
     indexBuckets[idx]->dataEnd = dataPositioned.second - dataKey;
+  }
+  __syncthreads();
+}
+
+
+__global__ void INDEXING_STRUCTURE(double *dataset, int *indexTreeMetaData,
+                                   double *minPoints, double *maxPoints, double *binWidth,
+                                   int *results,
+                                   struct IndexStructure **indexBuckets,
+                                   int *dataKey, int *dataValue,
+                                   double *upperBounds) {
+  if (blockIdx.x < DIMENSION) {
+    indexConstruction(blockIdx.x, indexTreeMetaData, minPoints, binWidth,
+                      indexBuckets, upperBounds);
+  }
+  __syncthreads();
+
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = threadId; i < DATASET_COUNT;
+       i = i + THREAD_COUNT * THREAD_BLOCKS) {
+    insertData(i, dataset, indexBuckets, dataKey, dataValue, upperBounds,
+               binWidth, minPoints, maxPoints);
   }
   __syncthreads();
 }
@@ -1021,14 +1023,14 @@ int ImportDataset(char const *fname, double *dataset) {
 
 int main() {
 
-  // Generate random datasets
-  char *datasetPath = "";
+ // Generate random datasets
+ char *datasetPath;
   double setOfR[5];
   int setOfMinPts[5];
   int defaultMin, defaultPts;
   double defaultR;
-  int setOfDataSize[5];
   int defaultP;
+  int setOfDataSize[5];
   int setOfP[5];
 
   if (PORTO) {
@@ -1052,10 +1054,9 @@ int main() {
 
     defaultMin = 8;
     defaultR = 0.008;
-
     defaultPts = 160000;
 
-    defaultP = 100;
+    defaultP = 30;
     datasetPath = "/data/dbscan/Porto_taxi_data.csv";
   }
 
@@ -1081,7 +1082,7 @@ int main() {
     defaultMin = 8;
     defaultR = 1.25;
     defaultPts = 400000;
-    
+
     defaultP = 100;
     datasetPath = "/home/mpoudel/datasets/NGSIM_Data.txt";
   }
@@ -1114,11 +1115,11 @@ int main() {
   }
 
   if (IONO2D) {
-    setOfDataSize[0] = 100000;
-    setOfDataSize[1] = 200000;
-    setOfDataSize[2] = 400000;
-    setOfDataSize[3] = 800000;
-    setOfDataSize[4] = 1600000;
+    setOfDataSize[0] = 50000;
+    setOfDataSize[1] = 100000;
+    setOfDataSize[2] = 200000;
+    setOfDataSize[3] = 400000;
+    setOfDataSize[4] = 800000;
 
     setOfR[0] = 0.5;
     setOfR[1] = 0.75;
@@ -1134,42 +1135,12 @@ int main() {
 
     defaultMin = 4;
     defaultR = 1.5;
-
     defaultPts = 400000;
 
-    defaultP = 100;
+    defaultP = 80;
     datasetPath = "/data/geodata/iono_20min_2Mpts_2D.txt";
   }
 
-  if (IONO3D) {
-    setOfDataSize[0] = 100000;
-    setOfDataSize[1] = 200000;
-    setOfDataSize[2] = 400000;
-    setOfDataSize[3] = 800000;
-    setOfDataSize[4] = 1600000;
-
-    setOfR[0] = 0.5;
-    setOfR[1] = 0.75;
-    setOfR[2] = 1;
-    setOfR[3] = 1.25;
-    setOfR[4] = 1.5;
-
-    setOfMinPts[0] = 4;
-    setOfMinPts[1] = 8;
-    setOfMinPts[2] = 16;
-    setOfMinPts[3] = 32;
-    setOfMinPts[4] = 64;
-
-    defaultMin = 4;
-    defaultR = 1.5;
-
-    defaultPts = 400000;
-
-    defaultP = 40;
-    datasetPath = "/data/geodata/iono_20min_2Mpts_3D.txt";
-  }
-
-  
   if (SPATIAL3D) {
     setOfDataSize[0] = 25000;
     setOfDataSize[1] = 50000;
@@ -1194,9 +1165,38 @@ int main() {
     defaultPts = 400000;
 
     defaultP = 10;
-    datasetPath = "/data/dbscan/3D_spatial_network.txt";
+    datasetPath = "/home/mpoudel/datasets/3D_spatial_network.txt";
   }
 
+  if (IONO3D) {
+    setOfDataSize[0] = 100000;
+    setOfDataSize[1] = 200000;
+    setOfDataSize[2] = 400000;
+    setOfDataSize[3] = 800000;
+    setOfDataSize[4] = 1600000;
+
+    setOfR[0] = 0.5;
+    setOfR[1] = 0.75;
+    setOfR[2] = 1;
+    setOfR[3] = 1.25;
+    setOfR[4] = 1.5;
+
+    setOfMinPts[0] = 4;
+    setOfMinPts[1] = 8;
+    setOfMinPts[2] = 16;
+    setOfMinPts[3] = 32;
+    setOfMinPts[4] = 64;
+
+    defaultMin = 4;
+    defaultR = 1.5;
+    defaultPts = 400000;
+
+    defaultP = 40;
+    datasetPath = "/data/geodata/iono_20min_2Mpts_3D.txt";
+  }
+
+
+    // // Different set of Eps
     // printf("################ EPS IMPACT ################\n");
     // for (int i = 0; i < 5; i++) {
     //   runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin, defaultP);
@@ -1208,11 +1208,32 @@ int main() {
     //   runDBSCAN(datasetPath, defaultPts, defaultR, setOfMinPts[i], defaultP);
     // }
   
+    // Different set of Points
     printf("################ POINTS IMPACT ################\n");
     for (int i = 0; i < 5; i++) {
       runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin, defaultP);
     }
 
+
+    // setOfP[0] = 10;
+    // setOfP[1] = 20;
+    // setOfP[2] = 30;
+    // setOfP[3] = 40;
+    // setOfP[4] = 50;
+    
+    // printf("################ PARTITION - POINTS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   for (int j = 0; j < 5; j++) {
+    //     runDBSCAN(datasetPath, setOfDataSize[i], defaultR, defaultMin, setOfP[j]);
+    //   }
+    // }
+
+    // printf("################ PARTITION - EPS IMPACT ################\n");
+    // for (int i = 0; i < 5; i++) {
+    //   for (int j = 0; j < 5; j++) {
+    //     runDBSCAN(datasetPath, defaultPts, setOfR[i], defaultMin, setOfP[j]);
+    //   }
+    // }
+
   
 }
-
