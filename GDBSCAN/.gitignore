@@ -1,6 +1,0 @@
-# Don't track content of these folders
-build/
-.cproject
-.project
-Results_*
-

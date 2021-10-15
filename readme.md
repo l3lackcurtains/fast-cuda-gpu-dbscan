@@ -19,9 +19,30 @@ The algorithm takes as input the dataset D, ϵ, and <em>minpts</em>, and outputs
 
 Future work includes investigating the dense box algorithm that can be used to further reduce the number of distance calculations in high-density regions.
 
+## Organization
+
+    .
+    ├── cpu-dbscan              # CPU DBSCAN algorithm
+    ├── multicore-cpu           # Parallel Multi-threaded CPU DBSCAN algorithm
+    ├── dbscan-cpu-indexing     # CUDA DBSCAN algorithm with CPU indexing
+    ├── gdbscan                 # G-DBSCAN algorithm
+    ├── cuda-dclust             # CUDA-DClust algorithm (clone)
+    ├── comparision-plots       # Comparision plots with Jupyter Notebook code
+    |── test-results            # Scripts to test the cluster results
+    |── test-datasets           # 2D and 3D datasets for test
+    |── main.cu                 # Main CUDA-DClust+ algorithm
+    |── exp.cu                  # CUDA-DClust+ algorithm used in an experiment
+    └── Makefile                # Makefile for CUDA-DClust+ algorithm
+
 ## Usage
 
---
+### CUDA-DClust+
+
+Change the DBSCAN configuration in 'common.h' file file and run
+
+```bash
+make && ./main.exe ./test-datasets/2d.txt
+```
 
 ## Experimental Results
 

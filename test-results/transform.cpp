@@ -14,14 +14,14 @@
 #define DATASET_SIZE 1000
 using namespace std;
 
-int importDataset(char const *fname, int N, int *cluster);
+int importResults(char const *fname, int N, int *cluster);
 
 int main() {
   int *clusterData1 = (int *)malloc(sizeof(int) * DATASET_SIZE);
   int *clusterData2 = (int *)malloc(sizeof(int) * DATASET_SIZE);
 
-  importDataset("./out/cuda_dclust_extended.txt", DATASET_SIZE, clusterData1);
-  importDataset("./finalized-dbscan-indexing/out/cuda_dclust.txt", DATASET_SIZE,
+  importResults("./out/cuda_dclust_extended.txt", DATASET_SIZE, clusterData1);
+  importResults("./finalized-dbscan-indexing/out/cuda_dclust.txt", DATASET_SIZE,
                 clusterData2);
 
   int max1 = *max_element(clusterData1, clusterData1 + DATASET_SIZE);
@@ -76,7 +76,7 @@ int main() {
   return 0;
 }
 
-int importDataset(char const *fname, int N, int *cluster) {
+int importResults(char const *fname, int N, int *cluster) {
   FILE *fp = fopen(fname, "r");
 
   if (!fp) {
