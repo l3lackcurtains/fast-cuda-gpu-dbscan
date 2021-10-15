@@ -37,6 +37,13 @@ Future work includes investigating the dense box algorithm that can be used to f
     |── Makefile                # Makefile for CUDA-DClust+ algorithm
     └── paper.pdf               # Research paper
 
+## Datasets
+
+Datasets used in the experiment are available online.
+[https://rcdata.nau.edu/gowanlock_lab/datasets/CUDA_DCLUST_datasets/CUDA_DCLUST_HiPC2021.zip](https://rcdata.nau.edu/gowanlock_lab/datasets/CUDA_DCLUST_datasets/CUDA_DCLUST_HiPC2021.zip)
+
+Read 'readme.txt' inside archive file before using the datasets.
+
 ## Usage
 
 ### CUDA-DClust+
