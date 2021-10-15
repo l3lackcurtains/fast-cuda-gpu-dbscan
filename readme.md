@@ -2,7 +2,9 @@
 
 > CUDA-DClust+ is a fast DBSCAN algorithm that leverages many of the algorithm designs in CUDA-DClust and parallels DBSCAN algorithms in the literature.
 
-The algorithm takes as input the dataset D, ϵ, and <em>minpts</em>, and outputs a list of points and their corresponding cluster or whether it has been assigned a noise label. The algorithm constructs an index on the dataset $D$ based on the number of partitions $r$ at each level of the tree. Then, it performs the cluster expansion routine on the GPU and merges the clusters on the CPU.
+> The algorithm takes as input the dataset D, ϵ, and <em>minpts</em>, and outputs a list of points and their corresponding cluster or whether it has been assigned a noise label. The algorithm constructs an index on the dataset $D$ based on the number of partitions $r$ at each level of the tree. Then, it performs the cluster expansion routine on the GPU and merges the clusters on the CPU.
+
+> #### [Research Paper](./paper.pdf)
 
 ### Key contributions
 
@@ -32,7 +34,8 @@ Future work includes investigating the dense box algorithm that can be used to f
     |── test-datasets           # 2D and 3D datasets for test
     |── main.cu                 # Main CUDA-DClust+ algorithm
     |── exp.cu                  # CUDA-DClust+ algorithm used in an experiment
-    └── Makefile                # Makefile for CUDA-DClust+ algorithm
+    |── Makefile                # Makefile for CUDA-DClust+ algorithm
+    └── paper.pdf               # Research paper
 
 ## Usage
 
