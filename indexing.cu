@@ -24,16 +24,19 @@ __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
                                     struct IndexStructure **indexBuckets,
                                     int *dataKey) {
   __shared__ int indexingRange;
+
+
+
   if (threadIdx.x == 0) {
     indexingRange = indexTreeMetaData[DIMENSION * RANGE + 1] -
                     indexTreeMetaData[DIMENSION * RANGE];
   }
   __syncthreads();
-
-  int threadId = blockDim.x * blockIdx.x + threadIdx.x;
-
+  
+  int threadId = blockDim.x * blockIdx.x + threadIdx.x; 
   for (int i = threadId; i < indexingRange;
        i = i + THREAD_COUNT * THREAD_BLOCKS) {
+    
     int idx = indexTreeMetaData[DIMENSION * RANGE] + i;
 
     thrust::pair<int *, int *> dataPositioned;
@@ -42,6 +45,7 @@ __global__ void INDEXING_ADJUSTMENT(int *indexTreeMetaData,
 
     indexBuckets[idx]->dataBegin = dataPositioned.first - dataKey;
     indexBuckets[idx]->dataEnd = dataPositioned.second - dataKey;
+
   }
   __syncthreads();
 }
@@ -72,9 +76,12 @@ __device__ void indexConstruction(int level, int *indexTreeMetaData,
                                   double *minPoints, double *binWidth,
                                   struct IndexStructure **indexBuckets,
                                   double *upperBounds) {
+
+  
   for (int k = threadIdx.x + indexTreeMetaData[level * RANGE + 0];
        k < indexTreeMetaData[level * RANGE + 1]; k = k + THREAD_COUNT) {
     for (int i = 0; i < PARTITION_SIZE; i++) {
+
       int currentBucketIndex =
           indexTreeMetaData[level * RANGE + 1] + i +
           (k - indexTreeMetaData[level * RANGE + 0]) * PARTITION_SIZE;
@@ -107,7 +114,6 @@ __device__ void insertData(int id, double *dataset,
     int currentIndex = (x - minPoints[j]) / (maxPoints[j] - minPoints[j]) * PARTITION_SIZE + 1;
     index = index * PARTITION_SIZE + currentIndex;
   }
-
   dataValue[id] = id;
   dataKey[id] = index;
 }

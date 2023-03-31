@@ -295,7 +295,6 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
   __syncthreads();
 
   // Complete the seedlist to proceed.
-
   while (seedLength[chainID] != 0) {
     for (int x = threadId; x < THREAD_BLOCKS * POINTS_SEARCHED;
          x = x + THREAD_BLOCKS * THREAD_COUNT) {
@@ -322,7 +321,6 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     __syncthreads();
 
     ///////////////////////////////////////////////////////////////////////////////////
-
     searchPoints(point, chainID, dataset, results, indexBuckets, indexesStack,
                  dataValue, upperBounds, binWidth, minPoints, maxPoints);
 
@@ -349,7 +347,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
           distance +=
               (point[x] - comparingPoint[x]) * (point[x] - comparingPoint[x]);
         }
-
+        
         if (distance <= EPS * EPS) {
           register int currentNeighborCount = atomicAdd(&neighborCount, 1);
           if (currentNeighborCount >= MINPTS) {
@@ -365,7 +363,7 @@ __global__ void DBSCAN(double *dataset, int *cluster, int *seedList,
     __syncthreads();
 
     ///////////////////////////////////////////////////////////////////////////////////
-
+    
     if (neighborCount >= MINPTS) {
       cluster[pointID] = chainID;
       for (int i = threadIdx.x; i < MINPTS; i = i + THREAD_COUNT) {
@@ -419,11 +417,13 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
     }
     __syncthreads();
 
+
     for (int k = threadIdx.x + indexBuckets[currentIndex]->childFrom;
          k < indexBuckets[currentIndex]->childFrom + PARTITION_SIZE;
          k = k + THREAD_COUNT) {
       double leftRange;
       double rightRange;
+
       if (k == indexBuckets[currentIndex]->childFrom) {
         leftRange =
             upperBounds[k] - binWidth[indexBuckets[currentIndex]->dimension];
@@ -431,11 +431,16 @@ __device__ void searchPoints(double *data, int chainID, double *dataset,
         leftRange = upperBounds[k - 1];
       }
 
+
       rightRange = upperBounds[k];
 
+      
+      
       if (comparingData >= leftRange && comparingData < rightRange) {
         if (indexBuckets[currentIndex]->dimension == DIMENSION - 1) {
+          
           int oldResultsCount = atomicAdd(&resultsCount, 1);
+
           results[chainID * POINTS_SEARCHED + oldResultsCount] = k;
 
           if (k > indexBuckets[currentIndex]->childFrom) {

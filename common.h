@@ -10,19 +10,18 @@ using namespace std;
 #define DIMENSION 2
 #define TREE_LEVELS (DIMENSION + 1)
 
-#define THREAD_BLOCKS 256
-#define THREAD_COUNT 256
+#define THREAD_BLOCKS 8
+#define THREAD_COUNT 16
 
 #define MAX_SEEDS 128
-#define EXTRA_COLLISION_SIZE 512
+#define EXTRA_COLLISION_SIZE 256
 
-// #define DATASET_COUNT 10000000
-#define DATASET_COUNT 1864620
+#define DATASET_COUNT 9
 
-#define MINPTS 4
+#define MINPTS 3
 #define EPS 1.5
 
-#define PARTITION_SIZE 70
+#define PARTITION_SIZE 3
 #define POINTS_SEARCHED 9
 
 /////////////////////////////////////////////////////////////////////////////////////////

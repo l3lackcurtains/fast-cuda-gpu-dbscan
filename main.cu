@@ -321,8 +321,6 @@ int main(int argc, char **argv) {
       d_dataset, d_indexTreeMetaData, d_minPoints, d_maxPoints, d_binWidth, d_results,
       d_indexBuckets, d_dataKey, d_dataValue, d_upperBounds);
   gpuErrchk(cudaDeviceSynchronize());
-
-  cudaFree(d_indexTreeMetaData);
   
 
   /**
