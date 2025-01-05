@@ -6,6 +6,8 @@
 #include <thrust/execution_policy.h>
 #include <thrust/functional.h>
 #include <thrust/sort.h>
+#include <thrust/count.h>
+#include <thrust/unique.h>
 #include <time.h>
 
 #include <algorithm>
